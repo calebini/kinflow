@@ -125,13 +125,30 @@ Every lifecycle step emits append-only, correlated audit events with reason code
 ## Verification
 
 Run from project root:
-bash
+```bash
 python3 -m compileall -q src tests && echo LINT_PASS_NORMALIZED
 PYTHONPATH=src python3 -m unittest discover -s tests -p 'test_*.py' -v
+```
 Expected:
 - `LINT_PASS_NORMALIZED`
 - `Ran 9 tests ...`
 - `OK`
+
+## Operator Scripts (copy/paste)
+
+Run from project root:
+```bash
+PYTHONPATH=src python3 scripts/operator_smoke.py
+PYTHONPATH=src python3 scripts/operator_create.py
+PYTHONPATH=src python3 scripts/operator_update.py
+PYTHONPATH=src python3 scripts/operator_cancel.py
+```
+
+Script purposes:
+- `scripts/operator_smoke.py` — one-pass create + delivery + brief/hash sanity check.
+- `scripts/operator_create.py` — deterministic create flow and due reminder delivery output.
+- `scripts/operator_update.py` — create then explicit update flow with regeneration-aware delivery output.
+- `scripts/operator_cancel.py` — create then cancel flow showing cancellation state and post-cancel delivery output.
 
 ---
 
