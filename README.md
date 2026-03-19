@@ -1,15 +1,143 @@
-# Project: Kinflow (slug: kinflow)
+# Kinflow
 
-## Canonical Requirements Baseline (v0)
-- `./requirements/KINFLOW_MASTER_REQUIREMENTS_UNIFIED_V0.md`
+## What It Is
 
-## Canonical Architecture Brief (v0)
-- `./architecture/KINFLOW_V0_ARCHITECTURE_BRIEF_MASTER.md`
+Kinflow is a deterministic, chat-first family scheduling coordinator.
 
-## v0 deterministic core implementation
-- Engine: `./src/ctx002_v0/engine.py`
-- Models: `./src/ctx002_v0/models.py`
-- Reason enums: `./src/ctx002_v0/reason_codes.py`
-- Acceptance harness: `./tests/test_acceptance_v0.py`
-- Verification evidence: `./docs/KINFLOW_V0_VERIFICATION_EVIDENCE.md`
-- Knuth landing handoff: `./docs/KINFLOW_V0_KNUTH_LANDING_HANDOFF.md`
+It captures event intent from chat, resolves create/update/cancel actions, enforces explicit confirmation before persistence, and drives reliable daily briefs and reminders with audit-first traceability.
+
+Kinflow is designed for:
+- predictable behavior under ambiguity
+- policy-bounded delivery
+- clear lifecycle evidence for every state transition
+---
+
+## Core Concepts
+
+**Event**
+A versioned scheduling record (title, time semantics, participants, audience, status) that acts as the source of truth.
+
+**ReminderRule**
+Policy for pre-event reminders (offset, recipient scope, enabled state).
+
+**Trigger / Job**
+A scheduled execution unit:
+- `daily_overview`
+- `event_reminder`
+**DeliveryAttempt**
+A concrete outbound attempt with status and failure/suppression reason.
+
+**Resolver**
+Deterministic create-vs-update decision path:
+1. explicit event reference
+2. deterministic similarity match
+3. ambiguity block (requires user disambiguation)
+4. no match → create
+
+**Policy Reason Codes**
+Canonical enum IDs (no free-text drift) used for resolver/time/lifecycle/delivery decisions.
+
+---
+## Architecture
+
+Chat Ingress
+│
+Intake Orchestrator
+├─ Intent Parser (fields + confidence)
+├─ Resolver (create/update/cancel precedence)
+├─ Confirmation Gate (hard yes/no before persist)
+│
+Event Store (versioned event state)
+│
+Scheduler / Trigger Engine
+├─ Reminder generation/invalidation/regeneration
+├─ Daily overview scheduling
+│
+Delivery Engine
+├─ Group/individual routing
+├─ Quiet-hours enforcement (recipient-local time)
+├─ Bounded retries + dedupe gate
+│
+Audit Ledger (append-only lifecycle records)
+
+Core references:
+- Requirements baseline: `requirements/KINFLOW_MASTER_REQUIREMENTS_UNIFIED_V0.md`
+- Architecture baseline: `architecture/KINFLOW_V0_ARCHITECTURE_BRIEF_MASTER.md`
+
+---
+
+## Key Behaviors
+### Idempotency
+Same intent fingerprint + same state resolves to same terminal mutation.
+
+### Resolver correctness
+Ambiguity never auto-resolves; explicit references always win.
+
+### Reminder regeneration
+Event update invalidates future old-version reminders and regenerates deterministic new set.
+
+### Cancel propagation
+Event cancel invalidates all future pending reminders.
+
+### Timezone safety
+- Event timezone = event semantics
+- Recipient timezone = delivery timing + quiet-hours
+- Missing recipient timezone blocks delivery scheduling (`TZ_MISSING`)
+
+### Delivery reliability
+- bounded retries
+- dedupe before send
+- no duplicate user-visible delivery for same dedupe key
+
+### Auditability
+Every lifecycle step emits append-only, correlated audit events with reason codes.
+
+---
+
+## Data Flow (Happy Path)
+
+1. Intake user message
+2. Parse/classify intent + required fields
+3. Ask follow-up only for missing required fields
+4. Resolve create/update/cancel target deterministically
+5. Normalize event candidate
+6. Confirmation gate (`Save this event? yes/no`)
+7. Persist event mutation (versioned)
+8. Generate/invalidate triggers
+9. Execute due delivery attempts
+10. Record delivery + audit outcomes
+
+---
+
+## Key Files
+
+- `src/ctx002_v0/engine.py` — deterministic lifecycle engine
+- `src/ctx002_v0/models.py` — Event/Reminder/Delivery contracts
+- `src/ctx002_v0/reason_codes.py` — canonical reason-code enums
+- `tests/test_acceptance_v0.py` — deterministic acceptance harness
+- `docs/KINFLOW_V0_IMPLEMENTATION_NOTES.md` — implementation mapping
+- `docs/KINFLOW_V0_VERIFICATION_EVIDENCE.md` — lint/test evidence
+- `docs/KINFLOW_V0_KNUTH_LANDING_HANDOFF.md` — landing handoff
+- `docs/PROJECT_RENAME_CTX002_TO_KINFLOW.md` — rename/migration note
+
+---
+
+## Verification
+
+Run from project root:
+bash
+python3 -m compileall -q src tests && echo LINT_PASS_NORMALIZED
+PYTHONPATH=src python3 -m unittest discover -s tests -p 'test_*.py' -v
+Expected:
+- `LINT_PASS_NORMALIZED`
+- `Ran 9 tests ...`
+- `OK`
+
+---
+
+## Current Status / Known Gaps
+
+- v0 deterministic core implemented and verified.
+- Calendar integrations are intentionally out-of-scope for v0.
+- Persistence/deployment hardening may still require follow-on phases.
+- GitHub square-one hygiene/CI standardization should be completed and enforced as policy gates.
