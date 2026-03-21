@@ -7,6 +7,7 @@ from typing import Callable
 from zoneinfo import ZoneInfo
 
 from .models import AuditRecord, DeliveryTarget, Event, Reminder
+from .persistence.store import InMemoryStateStore, SqliteStateStore, StateStore
 from .reason_codes import ReasonCode
 
 ProviderFn = Callable[[Reminder], bool]
@@ -23,6 +24,8 @@ class FamilySchedulerV0:
         similarity_threshold: float = 0.8,
         max_retries: int = 2,
         retry_delay_minutes: int = 5,
+        db_path: str | None = None,
+        state_store: StateStore | None = None,
     ) -> None:
         self.household_timezone = household_timezone
         self.event_fallback_timezone = event_fallback_timezone
@@ -30,39 +33,43 @@ class FamilySchedulerV0:
         self.max_retries = max_retries
         self.retry_delay_minutes = retry_delay_minutes
 
-        self._event_versions: dict[str, list[Event]] = {}
-        self._reminders: dict[str, Reminder] = {}
-        self._delivery_targets: dict[str, DeliveryTarget] = {}
-        self._audit: list[AuditRecord] = []
-        self._message_receipts: dict[str, dict] = {}
+        if state_store is not None:
+            self._store = state_store
+        elif db_path:
+            self._store = SqliteStateStore.from_path(db_path)
+        else:
+            self._store = InMemoryStateStore()
+
         self._visible_delivery_keys: set[str] = set()
-        self._event_counter = 0
+
+    @property
+    def _event_versions(self) -> dict[str, list[Event]]:
+        if isinstance(self._store, InMemoryStateStore):
+            return self._store.event_versions
+        raise AttributeError("_event_versions only available for in-memory store")
 
     @property
     def audit(self) -> tuple[AuditRecord, ...]:
-        return tuple(self._audit)
+        return self._store.list_audit()
 
     @property
     def reminders(self) -> tuple[Reminder, ...]:
-        return tuple(sorted(self._reminders.values(), key=lambda r: r.dedupe_key))
+        return self._store.list_reminders()
 
     @property
     def active_events(self) -> tuple[Event, ...]:
-        current = []
-        for versions in self._event_versions.values():
-            if versions and versions[-1].status == "active":
-                current.append(versions[-1])
-        return tuple(sorted(current, key=lambda e: e.event_id))
+        return self._store.list_active_events()
 
     def register_delivery_target(self, target: DeliveryTarget) -> None:
-        self._delivery_targets[target.person_id] = target
+        self._store.save_delivery_target(target)
 
     def process_intent(self, intent: dict) -> dict:
         message_id = intent["message_id"]
         correlation_id = intent.get("correlation_id") or f"corr:{message_id}"
 
-        if message_id in self._message_receipts:
-            return self._message_receipts[message_id]
+        existing = self._store.get_message_receipt(message_id)
+        if existing is not None:
+            return existing
 
         self._append_audit(correlation_id, message_id, "intake", ReasonCode.RESOLVER_NO_MATCH, "INTAKE")
 
@@ -73,7 +80,7 @@ class FamilySchedulerV0:
                 "missing_fields": missing,
                 "persisted": False,
             }
-            self._message_receipts[message_id] = result
+            self._store.save_message_receipt(message_id, result)
             return result
 
         resolved_event_id, resolver_code = self._resolve_event(intent)
@@ -85,7 +92,7 @@ class FamilySchedulerV0:
                 "persisted": False,
                 "reason_code": resolver_code.value,
             }
-            self._message_receipts[message_id] = result
+            self._store.save_message_receipt(message_id, result)
             return result
 
         if not intent.get("confirmed", False):
@@ -101,7 +108,7 @@ class FamilySchedulerV0:
                 "persisted": False,
                 "reason_code": ReasonCode.BLOCKED_CONFIRMATION_REQUIRED.value,
             }
-            self._message_receipts[message_id] = result
+            self._store.save_message_receipt(message_id, result)
             return result
 
         action = intent.get("action", "create")
@@ -120,21 +127,23 @@ class FamilySchedulerV0:
             "event_version": event.version,
             "reason_code": resolver_code.value,
         }
-        self._message_receipts[message_id] = result
+        self._store.save_message_receipt(message_id, result)
         return result
 
     def attempt_due_deliveries(self, now_utc: datetime, provider: ProviderFn) -> list[tuple[str, ReasonCode]]:
         outcomes: list[tuple[str, ReasonCode]] = []
-        for reminder in self.reminders:
+        reminders = list(self.reminders)
+        for reminder in reminders:
             if reminder.status not in {"scheduled", "attempted"}:
                 continue
             due = reminder.next_attempt_at_utc or reminder.trigger_at_utc
             if due > now_utc:
                 continue
 
-            target = self._delivery_targets.get(reminder.recipient_id)
+            target = self._store.get_delivery_target(reminder.recipient_id)
             if target is None or target.timezone is None:
                 reminder.status = "blocked"
+                self._store.update_reminder(reminder)
                 outcomes.append((reminder.dedupe_key, ReasonCode.TZ_MISSING))
                 self._append_audit("delivery", reminder.reminder_id, "delivery", ReasonCode.TZ_MISSING, reminder.dedupe_key)
                 continue
@@ -142,6 +151,7 @@ class FamilySchedulerV0:
             local_hour = now_utc.astimezone(ZoneInfo(target.timezone)).hour
             if self._is_quiet_hour(local_hour, target.quiet_hours_start, target.quiet_hours_end):
                 reminder.status = "suppressed"
+                self._store.update_reminder(reminder)
                 outcomes.append((reminder.dedupe_key, ReasonCode.SUPPRESSED_QUIET_HOURS))
                 self._append_audit(
                     "delivery",
@@ -155,12 +165,14 @@ class FamilySchedulerV0:
             reminder.status = "attempted"
             reminder.attempts += 1
             delivery_key = reminder.dedupe_key
+            self._store.update_reminder(reminder)
             if delivery_key in self._visible_delivery_keys:
                 continue
 
             ok = provider(reminder)
             if ok:
                 reminder.status = "delivered"
+                self._store.update_reminder(reminder)
                 self._visible_delivery_keys.add(delivery_key)
                 outcomes.append((delivery_key, ReasonCode.DELIVERED))
                 self._append_audit("delivery", reminder.reminder_id, "delivery", ReasonCode.DELIVERED, delivery_key)
@@ -169,6 +181,7 @@ class FamilySchedulerV0:
             self._append_audit("delivery", reminder.reminder_id, "delivery", ReasonCode.FAILED_PROVIDER, delivery_key)
             if reminder.attempts > self.max_retries:
                 reminder.status = "failed"
+                self._store.update_reminder(reminder)
                 outcomes.append((delivery_key, ReasonCode.FAILED_RETRY_EXHAUSTED))
                 self._append_audit(
                     "delivery",
@@ -179,11 +192,14 @@ class FamilySchedulerV0:
                 )
             else:
                 reminder.next_attempt_at_utc = now_utc + timedelta(minutes=self.retry_delay_minutes)
+                self._store.update_reminder(reminder)
                 outcomes.append((delivery_key, ReasonCode.FAILED_PROVIDER))
         return outcomes
 
     def generate_daily_brief(self, now_utc: datetime, recipient_id: str) -> dict:
-        target = self._delivery_targets[recipient_id]
+        target = self._store.get_delivery_target(recipient_id)
+        if target is None:
+            raise KeyError(recipient_id)
         tz = ZoneInfo(target.timezone or self.household_timezone)
         local_day = now_utc.astimezone(tz).date()
 
@@ -226,8 +242,7 @@ class FamilySchedulerV0:
     def _create_event(self, intent: dict) -> Event:
         tz_name, tz_reason = self._resolve_event_timezone(intent)
         self._append_audit(intent["message_id"], intent["message_id"], "timezone", tz_reason, tz_name)
-        self._event_counter += 1
-        event_id = f"evt-{self._event_counter:04d}"
+        event_id = self._store.next_event_id()
         event = Event(
             event_id=event_id,
             version=1,
@@ -240,12 +255,14 @@ class FamilySchedulerV0:
             all_day=bool(intent.get("all_day", False)),
             source_message_ref=intent["message_id"],
         )
-        self._event_versions[event_id] = [event]
+        self._store.save_new_event(event)
         self._schedule_reminders(event)
         return event
 
     def _update_event(self, event_id: str, intent: dict, now_utc: datetime) -> Event:
-        current = self._event_versions[event_id][-1]
+        current = self._store.get_latest_event(event_id)
+        if current is None:
+            raise ValueError(f"missing event: {event_id}")
         tz_name, tz_reason = self._resolve_event_timezone(intent, current.timezone)
         self._append_audit(intent["message_id"], intent["message_id"], "timezone", tz_reason, tz_name)
         updated = Event(
@@ -261,7 +278,7 @@ class FamilySchedulerV0:
             status="active",
             source_message_ref=intent["message_id"],
         )
-        self._event_versions[event_id].append(updated)
+        self._store.append_event_version(updated)
         self._invalidate_prior_version_reminders(event_id, updated.version, now_utc, ReasonCode.UPDATED_REGENERATED)
         self._schedule_reminders(updated)
         return updated
@@ -269,7 +286,9 @@ class FamilySchedulerV0:
     def _cancel_event(self, event_id: str | None, intent: dict, now_utc: datetime) -> Event:
         if event_id is None:
             raise ValueError("cancel requires an event")
-        current = self._event_versions[event_id][-1]
+        current = self._store.get_latest_event(event_id)
+        if current is None:
+            raise ValueError(f"missing event: {event_id}")
         cancelled = Event(
             event_id=current.event_id,
             version=current.version + 1,
@@ -283,13 +302,13 @@ class FamilySchedulerV0:
             status="cancelled",
             source_message_ref=intent["message_id"],
         )
-        self._event_versions[event_id].append(cancelled)
+        self._store.append_event_version(cancelled)
         self._invalidate_prior_version_reminders(event_id, cancelled.version, now_utc, ReasonCode.CANCEL_INVALIDATED)
         return cancelled
 
     def _resolve_event(self, intent: dict) -> tuple[str | None, ReasonCode]:
         explicit_id = intent.get("event_id")
-        if explicit_id and explicit_id in self._event_versions:
+        if explicit_id and self._store.has_event(explicit_id):
             return explicit_id, ReasonCode.RESOLVER_EXPLICIT
 
         candidates: list[tuple[str, float]] = []
@@ -321,7 +340,7 @@ class FamilySchedulerV0:
         trigger = start_utc - timedelta(minutes=event.reminder_offset_minutes)
 
         for recipient_id in event.audience:
-            target = self._delivery_targets.get(recipient_id)
+            target = self._store.get_delivery_target(recipient_id)
             reminder_id = f"rem-{event.event_id}-v{event.version}-{recipient_id}-{event.reminder_offset_minutes}"
             dedupe_key = f"{event.event_id}:{event.version}:{recipient_id}:{event.reminder_offset_minutes}:{trigger.isoformat()}"
 
@@ -336,11 +355,11 @@ class FamilySchedulerV0:
                     offset_minutes=event.reminder_offset_minutes,
                     status="blocked",
                 )
-                self._reminders[dedupe_key] = reminder
+                self._store.save_reminder(reminder)
                 self._append_audit("scheduler", reminder_id, "schedule", ReasonCode.TZ_MISSING, dedupe_key)
                 continue
 
-            if dedupe_key in self._reminders:
+            if self._store.has_reminder_dedupe(dedupe_key):
                 continue
 
             reminder = Reminder(
@@ -353,7 +372,7 @@ class FamilySchedulerV0:
                 offset_minutes=event.reminder_offset_minutes,
                 status="scheduled",
             )
-            self._reminders[dedupe_key] = reminder
+            self._store.save_reminder(reminder)
 
     def _resolve_event_timezone(self, intent: dict, existing: str | None = None) -> tuple[str, ReasonCode]:
         if intent.get("event_timezone"):
@@ -371,7 +390,7 @@ class FamilySchedulerV0:
         now_utc: datetime,
         reason: ReasonCode,
     ) -> None:
-        for reminder in self._reminders.values():
+        for reminder in self.reminders:
             if reminder.event_id != event_id:
                 continue
             if reminder.event_version >= new_version:
@@ -381,6 +400,7 @@ class FamilySchedulerV0:
             if reminder.status in {"invalidated", "delivered", "failed", "suppressed", "blocked"}:
                 continue
             reminder.status = "invalidated"
+            self._store.update_reminder(reminder)
             self._append_audit("mutation", reminder.reminder_id, "mutation", reason, reminder.dedupe_key)
 
     @staticmethod
@@ -397,9 +417,9 @@ class FamilySchedulerV0:
         reason_code: ReasonCode,
         payload: str,
     ) -> None:
-        self._audit.append(
+        self._store.append_audit(
             AuditRecord(
-                index=len(self._audit) + 1,
+                index=len(self.audit) + 1,
                 correlation_id=correlation_id,
                 message_id=message_id,
                 stage=stage,

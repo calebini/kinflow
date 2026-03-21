@@ -138,6 +138,8 @@ Every lifecycle step emits append-only, correlated audit events with reason code
 - `docs/PROJECT_RENAME_CTX002_TO_KINFLOW.md` — rename/migration note
 - `docs/KINFLOW_P1A_SCHEMA_MIGRATIONS_NOTES.md` — P1-A scope and artifact notes
 - `docs/KINFLOW_P1A_VERIFICATION_EVIDENCE.md` — P1-A verification evidence
+- `docs/KINFLOW_P1B_REPO_INTEGRATION_NOTES.md` — P1-B repository integration notes
+- `docs/KINFLOW_P1B_VERIFICATION_EVIDENCE.md` — P1-B verification evidence
 - `specs/KINFLOW_CONTRACT_FREEZE_MANIFEST_PHASE0_5.md` — Phase 0.5 canonical freeze manifest (pinned versions + hashes + change-control)
 
 ---
