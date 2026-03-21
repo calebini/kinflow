@@ -8,7 +8,7 @@ from typing import Callable
 from zoneinfo import ZoneInfo
 
 from .models import AuditRecord, DeliveryTarget, Event, Reminder
-from .persistence.store import InMemoryStateStore, SqliteStateStore, StateStore
+from .persistence.store import InMemoryStateStore, SqliteStateStore, StateStore, VersionConflictError
 from .reason_codes import ReasonCode
 
 ProviderFn = Callable[[Reminder], bool]
@@ -158,20 +158,29 @@ class FamilySchedulerV0:
             return result
 
         action = intent.get("action", "create")
-        if action == "cancel":
-            event = self._cancel_event(resolved_event_id, intent, now_utc)
-        elif resolved_event_id and action in {"update", "create"}:
-            event = self._update_event(resolved_event_id, intent, now_utc)
-        else:
-            event = self._create_event(intent)
+        try:
+            if action == "cancel":
+                event = self._cancel_event(resolved_event_id, intent, now_utc)
+            elif resolved_event_id and action in {"update", "create"}:
+                event = self._update_event(resolved_event_id, intent, now_utc)
+            else:
+                event = self._create_event(intent)
 
-        result = {
-            "status": "ok",
-            "persisted": True,
-            "event_id": event.event_id,
-            "event_version": event.version,
-            "reason_code": resolver_code.value,
-        }
+            result = {
+                "status": "ok",
+                "persisted": True,
+                "event_id": event.event_id,
+                "event_version": event.version,
+                "reason_code": resolver_code.value,
+            }
+        except VersionConflictError:
+            self._append_audit(correlation_id, message_id, "mutation", ReasonCode.VERSION_CONFLICT_RETRY, resolved_event_id or "none")
+            result = {
+                "status": "conflict",
+                "persisted": False,
+                "event_id": resolved_event_id,
+                "reason_code": ReasonCode.VERSION_CONFLICT_RETRY.value,
+            }
         self._store.save_message_receipt(
             channel,
             conversation_id,

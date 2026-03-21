@@ -43,6 +43,22 @@ Observed summary:
 - No lifecycle advancement on replay semantics (hit path):
   - same test confirms replay hit does not create additional event rows.
 
+## Version-conflict closure addendum (P1-E gap close)
+
+```bash
+cd /home/agent/projects/apps/kinflow
+PYTHONPATH=src python3 -m unittest -v tests.test_p1e_version_conflict_retry
+```
+
+Observed summary:
+- `Ran 1 test ...`
+- `OK`
+
+Proofs:
+- `VERSION_CONFLICT_RETRY` emission on optimistic version-guard conflict: PASS
+- no partial mutation writes on conflict path: PASS
+- deterministic replay behavior for conflict path: PASS
+
 ## Scope check evidence
 
 - Comms adapter implementation additions: **NO**

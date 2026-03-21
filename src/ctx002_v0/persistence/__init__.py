@@ -14,7 +14,7 @@ from .db import (
     verify_migration_checksums,
 )
 from .reason_binding import ReasonCodeBinding, validate_reason_code_binding
-from .store import InMemoryStateStore, SqliteStateStore, StateStore
+from .store import InMemoryStateStore, SqliteStateStore, StateStore, VersionConflictError
 
 __all__ = [
     "DEFAULT_MIGRATIONS_DIR",
@@ -26,6 +26,7 @@ __all__ = [
     "StateStore",
     "InMemoryStateStore",
     "SqliteStateStore",
+    "VersionConflictError",
     "apply_migrations",
     "bootstrap_database",
     "connect_sqlite",

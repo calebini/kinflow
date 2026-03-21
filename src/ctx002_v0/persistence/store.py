@@ -4,10 +4,14 @@ import json
 import sqlite3
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
-from typing import Protocol
+from typing import Callable, Protocol
 
 from ..models import AuditRecord, DeliveryTarget, Event, Reminder
 from .db import bootstrap_database
+
+
+class VersionConflictError(RuntimeError):
+    pass
 
 
 class StateStore(Protocol):
@@ -192,6 +196,7 @@ class InMemoryStateStore:
 @dataclass
 class SqliteStateStore:
     conn: sqlite3.Connection
+    on_before_version_guard: Callable[[sqlite3.Connection, Event, int], None] | None = None
 
     @classmethod
     def from_path(cls, db_path: str) -> "SqliteStateStore":
@@ -373,11 +378,27 @@ class SqliteStateStore:
 
     def append_event_version(self, event: Event) -> None:
         now = datetime.now(UTC).isoformat()
+        expected_previous_version = event.version - 1
         self.conn.execute("BEGIN IMMEDIATE")
         try:
             current = self.conn.execute("SELECT current_version FROM events WHERE event_id = ?", (event.event_id,)).fetchone()
             if not current:
                 raise RuntimeError(f"missing event: {event.event_id}")
+
+            if self.on_before_version_guard is not None:
+                self.on_before_version_guard(self.conn, event, expected_previous_version)
+
+            guard = self.conn.execute(
+                """
+                UPDATE events
+                SET current_version = ?, status = ?, updated_at_utc = ?
+                WHERE event_id = ? AND current_version = ?
+                """,
+                (event.version, event.status, now, event.event_id, expected_previous_version),
+            )
+            if guard.rowcount != 1:
+                raise VersionConflictError(f"VERSION_CONFLICT_RETRY:{event.event_id}:{expected_previous_version}")
+
             self.conn.execute(
                 """
                 INSERT INTO event_versions(
@@ -402,10 +423,6 @@ class SqliteStateStore:
                     event.source_message_ref,
                     now,
                 ),
-            )
-            self.conn.execute(
-                "UPDATE events SET current_version = ?, status = ?, updated_at_utc = ? WHERE event_id = ?",
-                (event.version, event.status, now, event.event_id),
             )
             self.conn.commit()
         except Exception:
