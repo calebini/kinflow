@@ -145,6 +145,7 @@ Every lifecycle step emits append-only, correlated audit events with reason code
 - `docs/KINFLOW_P1B_VERIFICATION_EVIDENCE.md` — P1-B verification evidence
 - `docs/KINFLOW_P1C_RECOVERY_CAPTURE_IDEMPOTENCY_NOTES.md` — P1-C recovery/capture/idempotency notes
 - `docs/KINFLOW_P1C_VERIFICATION_EVIDENCE.md` — P1-C verification evidence
+- `docs/KINFLOW_PHASE1_EXIT_EVIDENCE_MASTER.md` — Phase 1 exit criteria assessment and evidence matrix
 - `specs/KINFLOW_CONTRACT_FREEZE_MANIFEST_PHASE0_5.md` — Phase 0.5 canonical freeze manifest (pinned versions + hashes + change-control)
 
 ---
