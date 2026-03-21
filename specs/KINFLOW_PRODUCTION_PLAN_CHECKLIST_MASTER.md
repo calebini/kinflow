@@ -16,20 +16,34 @@ rollback reference (commit/tag) recorded
 ---
 
 Phase 0 — Baseline Lock
-[ ] Canonical specs installed + linked (requirements, architecture, persistence, comms adapter)
-[ ] Pointer integrity verified (README + backlog board)
-[ ] Open spec deltas resolved or explicitly deferred
-Exit Gate: All canonical artifact hashes pinned; no unresolved blocking deltas.
+[x] Canonical specs installed + linked (requirements, architecture, persistence, comms adapter)
+[x] Pointer integrity verified (README + backlog board)
+[x] Open spec deltas resolved or explicitly deferred
+Exit Gate: PASS — All canonical artifact hashes pinned; no unresolved blocking deltas.
+Evidence:
+- `/home/agent/projects/apps/kinflow/docs/KINFLOW_FREEZE_MANIFEST_INSTALL_4323_EVIDENCE.md`
+- `/home/agent/projects/apps/kinflow/specs/KINFLOW_CONTRACT_FREEZE_MANIFEST_PHASE0_5.md`
+
+Phase 0 completion annotations (concise):
+- Baseline canonical pointers installed and verified in README + backlog board (run_code 4323 evidence).
+- Pinned artifact hash table captured in freeze install evidence.
 
 ---
 
 Phase 0.5 — Contract Freeze Gate
-[ ] Reason-code enum version/hash pinned
-[ ] Comms contract version pinned
-[ ] Persistence schema version pinned
-[ ] Change-control rule set documented (what may change, who approves, re-freeze trigger)
+[x] Reason-code enum version/hash pinned
+[x] Comms contract version pinned
+[x] Persistence schema version pinned
+[x] Change-control rule set documented (what may change, who approves, re-freeze trigger)
 
-Exit Gate: Freeze manifest approved; implementation cannot begin without it.
+Exit Gate: PASS — Freeze manifest approved; implementation may proceed.
+Evidence:
+- `/home/agent/projects/apps/kinflow/specs/KINFLOW_CONTRACT_FREEZE_MANIFEST_PHASE0_5.md`
+- sha256: `fe9acbbff8f49d6c56098fc766f38b54b7531b90a2022daa98671e0e9afb6c24`
+
+Phase 0.5 completion annotations (concise):
+- Freeze manifest installed via instruction `KINFLOW-FREEZE-MANIFEST-INSTALL-20260321-001` (run_code 4323).
+- Change-control rules + deterministic block conditions documented in manifest.
 
 ---
 
