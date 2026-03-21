@@ -127,11 +127,17 @@ Every lifecycle step emits append-only, correlated audit events with reason code
 - `src/ctx002_v0/engine.py` — deterministic lifecycle engine
 - `src/ctx002_v0/models.py` — Event/Reminder/Delivery contracts
 - `src/ctx002_v0/reason_codes.py` — canonical reason-code enums
+- `src/ctx002_v0/persistence/db.py` — P1-A migration/bootstrap/FK/checksum/dirty enforcement primitives
+- `src/ctx002_v0/persistence/reason_binding.py` — canonical reason-code source binding validation scaffold
+- `migrations/0001_p1a_schema_foundation.sql` — canonical SQLite schema + enum seeds (v0.2.6-aligned)
 - `tests/test_acceptance_v0.py` — deterministic acceptance harness
+- `tests/test_p1a_schema_migrations.py` — P1-A schema/migration guard test suite
 - `docs/KINFLOW_V0_IMPLEMENTATION_NOTES.md` — implementation mapping
 - `docs/KINFLOW_V0_VERIFICATION_EVIDENCE.md` — lint/test evidence
 - `docs/KINFLOW_V0_KNUTH_LANDING_HANDOFF.md` — landing handoff
 - `docs/PROJECT_RENAME_CTX002_TO_KINFLOW.md` — rename/migration note
+- `docs/KINFLOW_P1A_SCHEMA_MIGRATIONS_NOTES.md` — P1-A scope and artifact notes
+- `docs/KINFLOW_P1A_VERIFICATION_EVIDENCE.md` — P1-A verification evidence
 - `specs/KINFLOW_CONTRACT_FREEZE_MANIFEST_PHASE0_5.md` — Phase 0.5 canonical freeze manifest (pinned versions + hashes + change-control)
 
 ---
@@ -140,8 +146,9 @@ Every lifecycle step emits append-only, correlated audit events with reason code
 
 Run from project root:
 ```bash
-python3 -m compileall -q src tests && echo LINT_PASS_NORMALIZED
+python3 -m compileall -q src scripts tests && echo LINT_PASS_NORMALIZED
 PYTHONPATH=src python3 -m unittest discover -s tests -p 'test_*.py' -v
+PYTHONPATH=src python3 -m unittest -v tests.test_p1a_schema_migrations
 ```
 Expected:
 - `LINT_PASS_NORMALIZED`
