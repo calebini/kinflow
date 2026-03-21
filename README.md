@@ -64,7 +64,20 @@ Core references:
 - Requirements baseline: `requirements/KINFLOW_MASTER_REQUIREMENTS_UNIFIED_V0.md`
 - Architecture baseline: `architecture/KINFLOW_V0_ARCHITECTURE_BRIEF_MASTER.md`
 
+
+## Canonical Persistence Spec
+
+- `specs/KINFLOW_DURABLE_PERSISTENCE_SPEC_MASTER_v0.2.6.md`
+
 ---
+
+## Canonical Comms Adapter Spec
+
+- `specs/KINFLOW_COMMS_ADAPTER_CONTRACT_MASTER_v0.1.7.md`
+
+## Canonical Production Plan Checklist
+
+- `specs/KINFLOW_PRODUCTION_PLAN_CHECKLIST_MASTER.md`
 
 ## Key Behaviors
 ### Idempotency
@@ -119,6 +132,7 @@ Every lifecycle step emits append-only, correlated audit events with reason code
 - `docs/KINFLOW_V0_VERIFICATION_EVIDENCE.md` — lint/test evidence
 - `docs/KINFLOW_V0_KNUTH_LANDING_HANDOFF.md` — landing handoff
 - `docs/PROJECT_RENAME_CTX002_TO_KINFLOW.md` — rename/migration note
+- `specs/KINFLOW_CONTRACT_FREEZE_MANIFEST_PHASE0_5.md` — Phase 0.5 canonical freeze manifest (pinned versions + hashes + change-control)
 
 ---
 
