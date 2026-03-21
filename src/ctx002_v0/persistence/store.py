@@ -3,8 +3,7 @@ from __future__ import annotations
 import json
 import sqlite3
 from dataclasses import dataclass
-from datetime import UTC, datetime
-from pathlib import Path
+from datetime import UTC, datetime, timedelta
 from typing import Protocol
 
 from ..models import AuditRecord, DeliveryTarget, Event, Reminder
@@ -12,9 +11,20 @@ from .db import bootstrap_database
 
 
 class StateStore(Protocol):
-    def get_message_receipt(self, message_id: str) -> dict | None: ...
+    def get_message_receipt(self, channel: str, conversation_id: str, message_id: str) -> dict | None: ...
 
-    def save_message_receipt(self, message_id: str, result: dict) -> None: ...
+    def find_recent_receipt_by_intent_hash(self, intent_hash: str, now_utc: datetime, window_hours: int) -> dict | None: ...
+
+    def save_message_receipt(
+        self,
+        channel: str,
+        conversation_id: str,
+        message_id: str,
+        correlation_id: str,
+        intent_hash: str,
+        result: dict,
+        created_at_utc: datetime,
+    ) -> None: ...
 
     def list_active_events(self) -> tuple[Event, ...]: ...
 
@@ -29,6 +39,10 @@ class StateStore(Protocol):
     def append_event_version(self, event: Event) -> None: ...
 
     def list_reminders(self) -> tuple[Reminder, ...]: ...
+
+    def list_due_reminders(self, now_utc: datetime, limit: int | None = None) -> tuple[Reminder, ...]: ...
+
+    def count_due_reminders(self, now_utc: datetime) -> int: ...
 
     def save_reminder(self, reminder: Reminder) -> None: ...
 
@@ -46,6 +60,14 @@ class StateStore(Protocol):
 
     def list_audit(self) -> tuple[AuditRecord, ...]: ...
 
+    def get_runtime_mode(self) -> str: ...
+
+    def set_runtime_mode(self, mode: str) -> None: ...
+
+    def get_idempotency_window_hours(self) -> int: ...
+
+    def get_max_retry_attempts(self) -> int: ...
+
 
 class InMemoryStateStore:
     def __init__(self) -> None:
@@ -53,14 +75,37 @@ class InMemoryStateStore:
         self.reminders: dict[str, Reminder] = {}
         self.delivery_targets: dict[str, DeliveryTarget] = {}
         self.audit: list[AuditRecord] = []
-        self.receipts: dict[str, dict] = {}
+        self.receipts: dict[tuple[str, str, str], tuple[datetime, str, dict]] = {}
         self.event_counter = 0
+        self.runtime_mode = "normal"
+        self.idempotency_window_hours = 24
+        self.max_retry_attempts = 3
 
-    def get_message_receipt(self, message_id: str) -> dict | None:
-        return self.receipts.get(message_id)
+    def get_message_receipt(self, channel: str, conversation_id: str, message_id: str) -> dict | None:
+        row = self.receipts.get((channel, conversation_id, message_id))
+        return row[2] if row else None
 
-    def save_message_receipt(self, message_id: str, result: dict) -> None:
-        self.receipts[message_id] = result
+    def find_recent_receipt_by_intent_hash(self, intent_hash: str, now_utc: datetime, window_hours: int) -> dict | None:
+        lower = now_utc - timedelta(hours=window_hours)
+        for created_at, stored_hash, result in sorted(self.receipts.values(), key=lambda x: x[0], reverse=True):
+            if stored_hash != intent_hash:
+                continue
+            if created_at < lower:
+                continue
+            return result
+        return None
+
+    def save_message_receipt(
+        self,
+        channel: str,
+        conversation_id: str,
+        message_id: str,
+        correlation_id: str,
+        intent_hash: str,
+        result: dict,
+        created_at_utc: datetime,
+    ) -> None:
+        self.receipts[(channel, conversation_id, message_id)] = (created_at_utc, intent_hash, result)
 
     def list_active_events(self) -> tuple[Event, ...]:
         current = []
@@ -91,6 +136,22 @@ class InMemoryStateStore:
     def list_reminders(self) -> tuple[Reminder, ...]:
         return tuple(sorted(self.reminders.values(), key=lambda r: r.dedupe_key))
 
+    def list_due_reminders(self, now_utc: datetime, limit: int | None = None) -> tuple[Reminder, ...]:
+        rows = []
+        for reminder in self.reminders.values():
+            if reminder.status not in {"scheduled", "attempted"}:
+                continue
+            due = reminder.next_attempt_at_utc or reminder.trigger_at_utc
+            if due <= now_utc:
+                rows.append(reminder)
+        ordered = sorted(rows, key=lambda r: (r.trigger_at_utc, r.reminder_id))
+        if limit is None:
+            return tuple(ordered)
+        return tuple(ordered[:limit])
+
+    def count_due_reminders(self, now_utc: datetime) -> int:
+        return len(self.list_due_reminders(now_utc))
+
     def save_reminder(self, reminder: Reminder) -> None:
         self.reminders[reminder.dedupe_key] = reminder
 
@@ -115,6 +176,18 @@ class InMemoryStateStore:
     def list_audit(self) -> tuple[AuditRecord, ...]:
         return tuple(self.audit)
 
+    def get_runtime_mode(self) -> str:
+        return self.runtime_mode
+
+    def set_runtime_mode(self, mode: str) -> None:
+        self.runtime_mode = mode
+
+    def get_idempotency_window_hours(self) -> int:
+        return self.idempotency_window_hours
+
+    def get_max_retry_attempts(self) -> int:
+        return self.max_retry_attempts
+
 
 @dataclass
 class SqliteStateStore:
@@ -123,7 +196,23 @@ class SqliteStateStore:
     @classmethod
     def from_path(cls, db_path: str) -> "SqliteStateStore":
         conn = bootstrap_database(db_path)
-        return cls(conn)
+        store = cls(conn)
+        store._ensure_system_state_defaults()
+        return store
+
+    def _ensure_system_state_defaults(self) -> None:
+        now = datetime.now(UTC).isoformat()
+        defaults = [
+            ("runtime_mode", "enum", "normal"),
+            ("idempotency_window_hours", "int", "24"),
+            ("max_retry_attempts", "int", "3"),
+        ]
+        for key, value_type, value in defaults:
+            self.conn.execute(
+                "INSERT OR IGNORE INTO system_state(key, value_type, value, updated_at_utc) VALUES (?, ?, ?, ?)",
+                (key, value_type, value, now),
+            )
+        self.conn.commit()
 
     @staticmethod
     def _event_from_row(row: sqlite3.Row) -> Event:
@@ -156,27 +245,50 @@ class SqliteStateStore:
             next_attempt_at_utc=datetime.fromisoformat(row["next_attempt_at_utc"]) if row["next_attempt_at_utc"] else None,
         )
 
-    def get_message_receipt(self, message_id: str) -> dict | None:
+    def get_message_receipt(self, channel: str, conversation_id: str, message_id: str) -> dict | None:
         row = self.conn.execute(
             "SELECT result_json FROM message_receipts WHERE channel = ? AND conversation_id = ? AND message_id = ?",
-            ("engine", "default", message_id),
+            (channel, conversation_id, message_id),
         ).fetchone()
         return json.loads(row["result_json"]) if row else None
 
-    def save_message_receipt(self, message_id: str, result: dict) -> None:
+    def find_recent_receipt_by_intent_hash(self, intent_hash: str, now_utc: datetime, window_hours: int) -> dict | None:
+        lower = (now_utc - timedelta(hours=window_hours)).isoformat()
+        row = self.conn.execute(
+            """
+            SELECT result_json
+            FROM message_receipts
+            WHERE intent_hash = ? AND created_at_utc >= ?
+            ORDER BY created_at_utc DESC
+            LIMIT 1
+            """,
+            (intent_hash, lower),
+        ).fetchone()
+        return json.loads(row["result_json"]) if row else None
+
+    def save_message_receipt(
+        self,
+        channel: str,
+        conversation_id: str,
+        message_id: str,
+        correlation_id: str,
+        intent_hash: str,
+        result: dict,
+        created_at_utc: datetime,
+    ) -> None:
         self.conn.execute(
             """
             INSERT OR REPLACE INTO message_receipts(channel, conversation_id, message_id, correlation_id, intent_hash, result_json, created_at_utc)
             VALUES (?, ?, ?, ?, ?, ?, ?)
             """,
             (
-                "engine",
-                "default",
+                channel,
+                conversation_id,
                 message_id,
-                f"corr:{message_id}",
-                message_id,
+                correlation_id,
+                intent_hash,
                 json.dumps(result, sort_keys=True),
-                datetime.now(UTC).isoformat(),
+                created_at_utc.isoformat(),
             ),
         )
         self.conn.commit()
@@ -303,6 +415,27 @@ class SqliteStateStore:
     def list_reminders(self) -> tuple[Reminder, ...]:
         rows = self.conn.execute("SELECT * FROM reminders ORDER BY dedupe_key").fetchall()
         return tuple(self._reminder_from_row(row) for row in rows)
+
+    def list_due_reminders(self, now_utc: datetime, limit: int | None = None) -> tuple[Reminder, ...]:
+        sql = (
+            "SELECT * FROM reminders "
+            "WHERE status IN ('scheduled','attempted') "
+            "AND COALESCE(next_attempt_at_utc, trigger_at_utc) <= ? "
+            "ORDER BY trigger_at_utc ASC, reminder_id ASC"
+        )
+        params: list[object] = [now_utc.isoformat()]
+        if limit is not None:
+            sql += " LIMIT ?"
+            params.append(limit)
+        rows = self.conn.execute(sql, tuple(params)).fetchall()
+        return tuple(self._reminder_from_row(row) for row in rows)
+
+    def count_due_reminders(self, now_utc: datetime) -> int:
+        row = self.conn.execute(
+            "SELECT COUNT(*) AS n FROM reminders WHERE status IN ('scheduled','attempted') AND COALESCE(next_attempt_at_utc, trigger_at_utc) <= ?",
+            (now_utc.isoformat(),),
+        ).fetchone()
+        return int(row["n"])
 
     def save_reminder(self, reminder: Reminder) -> None:
         now = datetime.now(UTC).isoformat()
@@ -444,3 +577,22 @@ class SqliteStateStore:
                 )
             )
         return tuple(output)
+
+    def get_runtime_mode(self) -> str:
+        row = self.conn.execute("SELECT value FROM system_state WHERE key='runtime_mode'").fetchone()
+        return row["value"] if row else "normal"
+
+    def set_runtime_mode(self, mode: str) -> None:
+        self.conn.execute(
+            "UPDATE system_state SET value = ?, updated_at_utc = ? WHERE key = 'runtime_mode'",
+            (mode, datetime.now(UTC).isoformat()),
+        )
+        self.conn.commit()
+
+    def get_idempotency_window_hours(self) -> int:
+        row = self.conn.execute("SELECT value FROM system_state WHERE key='idempotency_window_hours'").fetchone()
+        return int(row["value"]) if row else 24
+
+    def get_max_retry_attempts(self) -> int:
+        row = self.conn.execute("SELECT value FROM system_state WHERE key='max_retry_attempts'").fetchone()
+        return int(row["value"]) if row else 3

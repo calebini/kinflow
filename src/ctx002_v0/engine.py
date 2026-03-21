@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from dataclasses import asdict
 from datetime import UTC, datetime, timedelta
 from hashlib import sha256
@@ -63,13 +64,34 @@ class FamilySchedulerV0:
     def register_delivery_target(self, target: DeliveryTarget) -> None:
         self._store.save_delivery_target(target)
 
+    def set_runtime_mode(self, mode: str) -> None:
+        self._store.set_runtime_mode(mode)
+
     def process_intent(self, intent: dict) -> dict:
         message_id = intent["message_id"]
         correlation_id = intent.get("correlation_id") or f"corr:{message_id}"
+        now_utc = intent.get("received_at_utc") or datetime.now(UTC)
+        channel = intent.get("channel", "engine")
+        conversation_id = intent.get("conversation_id", "default")
+        intent_hash = intent.get("intent_hash") or self._intent_hash(intent)
 
-        existing = self._store.get_message_receipt(message_id)
+        existing = self._store.get_message_receipt(channel, conversation_id, message_id)
         if existing is not None:
             return existing
+
+        window_hours = self._store.get_idempotency_window_hours()
+        replay = self._store.find_recent_receipt_by_intent_hash(intent_hash, now_utc, window_hours)
+        if replay is not None:
+            self._store.save_message_receipt(
+                channel,
+                conversation_id,
+                message_id,
+                correlation_id,
+                intent_hash,
+                replay,
+                now_utc,
+            )
+            return replay
 
         self._append_audit(correlation_id, message_id, "intake", ReasonCode.RESOLVER_NO_MATCH, "INTAKE")
 
@@ -80,7 +102,15 @@ class FamilySchedulerV0:
                 "missing_fields": missing,
                 "persisted": False,
             }
-            self._store.save_message_receipt(message_id, result)
+            self._store.save_message_receipt(
+                channel,
+                conversation_id,
+                message_id,
+                correlation_id,
+                intent_hash,
+                result,
+                now_utc,
+            )
             return result
 
         resolved_event_id, resolver_code = self._resolve_event(intent)
@@ -92,7 +122,15 @@ class FamilySchedulerV0:
                 "persisted": False,
                 "reason_code": resolver_code.value,
             }
-            self._store.save_message_receipt(message_id, result)
+            self._store.save_message_receipt(
+                channel,
+                conversation_id,
+                message_id,
+                correlation_id,
+                intent_hash,
+                result,
+                now_utc,
+            )
             return result
 
         if not intent.get("confirmed", False):
@@ -108,11 +146,18 @@ class FamilySchedulerV0:
                 "persisted": False,
                 "reason_code": ReasonCode.BLOCKED_CONFIRMATION_REQUIRED.value,
             }
-            self._store.save_message_receipt(message_id, result)
+            self._store.save_message_receipt(
+                channel,
+                conversation_id,
+                message_id,
+                correlation_id,
+                intent_hash,
+                result,
+                now_utc,
+            )
             return result
 
         action = intent.get("action", "create")
-        now_utc = intent.get("received_at_utc") or datetime.now(UTC)
         if action == "cancel":
             event = self._cancel_event(resolved_event_id, intent, now_utc)
         elif resolved_event_id and action in {"update", "create"}:
@@ -127,19 +172,24 @@ class FamilySchedulerV0:
             "event_version": event.version,
             "reason_code": resolver_code.value,
         }
-        self._store.save_message_receipt(message_id, result)
+        self._store.save_message_receipt(
+            channel,
+            conversation_id,
+            message_id,
+            correlation_id,
+            intent_hash,
+            result,
+            now_utc,
+        )
         return result
 
     def attempt_due_deliveries(self, now_utc: datetime, provider: ProviderFn) -> list[tuple[str, ReasonCode]]:
-        outcomes: list[tuple[str, ReasonCode]] = []
-        reminders = list(self.reminders)
-        for reminder in reminders:
-            if reminder.status not in {"scheduled", "attempted"}:
-                continue
-            due = reminder.next_attempt_at_utc or reminder.trigger_at_utc
-            if due > now_utc:
-                continue
+        if self._store.get_runtime_mode() == "capture_only":
+            self._append_audit("system", "capture_only", "delivery", ReasonCode.CAPTURE_ONLY_BLOCKED, "delivery blocked")
+            return [("capture_only", ReasonCode.CAPTURE_ONLY_BLOCKED)]
 
+        outcomes: list[tuple[str, ReasonCode]] = []
+        for reminder in self._store.list_due_reminders(now_utc):
             target = self._store.get_delivery_target(reminder.recipient_id)
             if target is None or target.timezone is None:
                 reminder.status = "blocked"
@@ -179,7 +229,8 @@ class FamilySchedulerV0:
                 continue
 
             self._append_audit("delivery", reminder.reminder_id, "delivery", ReasonCode.FAILED_PROVIDER, delivery_key)
-            if reminder.attempts > self.max_retries:
+            retry_limit = min(self.max_retries, self._store.get_max_retry_attempts())
+            if reminder.attempts > retry_limit:
                 reminder.status = "failed"
                 self._store.update_reminder(reminder)
                 outcomes.append((delivery_key, ReasonCode.FAILED_RETRY_EXHAUSTED))
@@ -195,6 +246,34 @@ class FamilySchedulerV0:
                 self._store.update_reminder(reminder)
                 outcomes.append((delivery_key, ReasonCode.FAILED_PROVIDER))
         return outcomes
+
+    def run_reconciliation_batch(self, now_utc: datetime, *, batch_size: int = 50) -> dict:
+        if self._store.get_runtime_mode() == "capture_only":
+            self._append_audit("system", "capture_only", "recovery", ReasonCode.CAPTURE_ONLY_BLOCKED, "recovery blocked")
+            return {"processed": 0, "has_more": False, "reason_code": ReasonCode.CAPTURE_ONLY_BLOCKED.value}
+
+        due = list(self._store.list_due_reminders(now_utc, limit=batch_size))
+        processed = 0
+        for reminder in due:
+            if reminder.status == "attempted" and reminder.next_attempt_at_utc and reminder.next_attempt_at_utc <= now_utc:
+                reminder.status = "scheduled"
+                reminder.next_attempt_at_utc = None
+                self._store.update_reminder(reminder)
+                self._append_audit(
+                    "recovery",
+                    reminder.reminder_id,
+                    "recovery",
+                    ReasonCode.RECOVERY_RECONCILED,
+                    reminder.dedupe_key,
+                )
+                processed += 1
+
+        total_due = self._store.count_due_reminders(now_utc)
+        return {
+            "processed": processed,
+            "has_more": total_due > batch_size,
+            "reason_code": ReasonCode.RECOVERY_RECONCILED.value,
+        }
 
     def generate_daily_brief(self, now_utc: datetime, recipient_id: str) -> dict:
         target = self._store.get_delivery_target(recipient_id)
@@ -449,3 +528,17 @@ class FamilySchedulerV0:
         if intent.get("reminder_offset_minutes") is None:
             missing.append("reminder_preference")
         return missing
+
+    @staticmethod
+    def _intent_hash(intent: dict) -> str:
+        stable = {
+            "action": intent.get("action", "create"),
+            "title": intent.get("title"),
+            "start_at_local": intent.get("start_at_local").isoformat() if intent.get("start_at_local") else None,
+            "participants": sorted(intent.get("participants", ())),
+            "audience": sorted(intent.get("audience", ())),
+            "reminder_offset_minutes": intent.get("reminder_offset_minutes"),
+            "event_id": intent.get("event_id"),
+            "event_timezone": intent.get("event_timezone"),
+        }
+        return sha256(json.dumps(stable, sort_keys=True).encode("utf-8")).hexdigest()

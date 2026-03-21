@@ -129,9 +129,12 @@ Every lifecycle step emits append-only, correlated audit events with reason code
 - `src/ctx002_v0/reason_codes.py` — canonical reason-code enums
 - `src/ctx002_v0/persistence/db.py` — P1-A migration/bootstrap/FK/checksum/dirty enforcement primitives
 - `src/ctx002_v0/persistence/reason_binding.py` — canonical reason-code source binding validation scaffold
+- `src/ctx002_v0/persistence/store.py` — repository abstraction + in-memory/sqlite state stores
 - `migrations/0001_p1a_schema_foundation.sql` — canonical SQLite schema + enum seeds (v0.2.6-aligned)
 - `tests/test_acceptance_v0.py` — deterministic acceptance harness
 - `tests/test_p1a_schema_migrations.py` — P1-A schema/migration guard test suite
+- `tests/test_p1b_repo_integration.py` — P1-B repository integration suite
+- `tests/test_p1c_recovery_capture_idempotency.py` — P1-C recovery/capture/idempotency invariant suite
 - `docs/KINFLOW_V0_IMPLEMENTATION_NOTES.md` — implementation mapping
 - `docs/KINFLOW_V0_VERIFICATION_EVIDENCE.md` — lint/test evidence
 - `docs/KINFLOW_V0_KNUTH_LANDING_HANDOFF.md` — landing handoff
@@ -140,6 +143,8 @@ Every lifecycle step emits append-only, correlated audit events with reason code
 - `docs/KINFLOW_P1A_VERIFICATION_EVIDENCE.md` — P1-A verification evidence
 - `docs/KINFLOW_P1B_REPO_INTEGRATION_NOTES.md` — P1-B repository integration notes
 - `docs/KINFLOW_P1B_VERIFICATION_EVIDENCE.md` — P1-B verification evidence
+- `docs/KINFLOW_P1C_RECOVERY_CAPTURE_IDEMPOTENCY_NOTES.md` — P1-C recovery/capture/idempotency notes
+- `docs/KINFLOW_P1C_VERIFICATION_EVIDENCE.md` — P1-C verification evidence
 - `specs/KINFLOW_CONTRACT_FREEZE_MANIFEST_PHASE0_5.md` — Phase 0.5 canonical freeze manifest (pinned versions + hashes + change-control)
 
 ---
