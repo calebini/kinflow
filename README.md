@@ -79,6 +79,10 @@ Core references:
 
 - `specs/KINFLOW_PRODUCTION_PLAN_CHECKLIST_MASTER.md`
 
+## Canonical Daemon Runtime Contract
+
+- `specs/KINFLOW_DAEMON_RUNTIME_CONTRACT_MASTER_v0.1.4.md`
+
 ## Key Behaviors
 ### Idempotency
 Same intent fingerprint + same state resolves to same terminal mutation.
@@ -125,6 +129,7 @@ Every lifecycle step emits append-only, correlated audit events with reason code
 ## Key Files
 
 - `src/ctx002_v0/engine.py` — deterministic lifecycle engine
+- `src/ctx002_v0/daemon.py` — P2-A daemon baseline primitives (contract v0.1.4 aligned)
 - `src/ctx002_v0/models.py` — Event/Reminder/Delivery contracts
 - `src/ctx002_v0/reason_codes.py` — canonical reason-code enums
 - `src/ctx002_v0/persistence/db.py` — P1-A migration/bootstrap/FK/checksum/dirty enforcement primitives
@@ -135,6 +140,7 @@ Every lifecycle step emits append-only, correlated audit events with reason code
 - `tests/test_p1a_schema_migrations.py` — P1-A schema/migration guard test suite
 - `tests/test_p1b_repo_integration.py` — P1-B repository integration suite
 - `tests/test_p1c_recovery_capture_idempotency.py` — P1-C recovery/capture/idempotency invariant suite
+- `tests/test_p2a_daemon_baseline.py` — P2-A daemon baseline contract conformance suite
 - `docs/KINFLOW_V0_IMPLEMENTATION_NOTES.md` — implementation mapping
 - `docs/KINFLOW_V0_VERIFICATION_EVIDENCE.md` — lint/test evidence
 - `docs/KINFLOW_V0_KNUTH_LANDING_HANDOFF.md` — landing handoff
@@ -145,6 +151,8 @@ Every lifecycle step emits append-only, correlated audit events with reason code
 - `docs/KINFLOW_P1B_VERIFICATION_EVIDENCE.md` — P1-B verification evidence
 - `docs/KINFLOW_P1C_RECOVERY_CAPTURE_IDEMPOTENCY_NOTES.md` — P1-C recovery/capture/idempotency notes
 - `docs/KINFLOW_P1C_VERIFICATION_EVIDENCE.md` — P1-C verification evidence
+- `docs/KINFLOW_P2A_DAEMON_BASELINE_NOTES.md` — P2-A daemon baseline implementation notes
+- `docs/KINFLOW_P2A_VERIFICATION_EVIDENCE.md` — P2-A contract verification evidence and matrix
 - `docs/KINFLOW_PHASE1_EXIT_EVIDENCE_MASTER.md` — Phase 1 exit criteria assessment and evidence matrix
 - `specs/KINFLOW_CONTRACT_FREEZE_MANIFEST_PHASE0_5.md` — Phase 0.5 canonical freeze manifest (pinned versions + hashes + change-control)
 
