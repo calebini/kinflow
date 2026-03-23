@@ -154,6 +154,7 @@ Every lifecycle step emits append-only, correlated audit events with reason code
 - `docs/KINFLOW_P2A_DAEMON_BASELINE_NOTES.md` — P2-A daemon baseline implementation notes
 - `docs/KINFLOW_P2A_VERIFICATION_EVIDENCE.md` — P2-A contract verification evidence and matrix
 - `docs/KINFLOW_PHASE1_EXIT_EVIDENCE_MASTER.md` — Phase 1 exit criteria assessment and evidence matrix
+- `docs/KINFLOW_OC_GATEWAY_ASSUMPTION_PROBE.md` — deterministic gateway assumption probe evidence (Discord/WhatsApp/error-shape)
 - `specs/KINFLOW_CONTRACT_FREEZE_MANIFEST_PHASE0_5.md` — Phase 0.5 canonical freeze manifest (pinned versions + hashes + change-control)
 
 ---
