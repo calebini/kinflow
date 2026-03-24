@@ -65,9 +65,17 @@ Exception record MUST include:
 - temporary validity window
 - required follow-up re-freeze instruction
 
-## 4) Freeze violation handling
+## 4) Architecture decision discoverability pins
 
-### 4.1 Deterministic block condition
+Issue #3 architecture decision (authoritative):
+- `/home/agent/projects/apps/kinflow/docs/KINFLOW_ARCH_DECISION_ISSUE3_ADAPTER_RESULTS_VS_DELIVERY_ATTEMPTS_2026-03-24.md`
+
+Post-Issue #3 spec re-baseline declaration:
+- `/home/agent/projects/apps/kinflow/docs/KINFLOW_SPEC_BASELINE_DECLARATION_POST_ISSUE3_2026-03-24.md`
+
+## 5) Freeze violation handling
+
+### 5.1 Deterministic block condition
 
 Implementation progression is BLOCKED when any of these are true:
 - any pinned artifact is missing
@@ -75,7 +83,7 @@ Implementation progression is BLOCKED when any of these are true:
 - any pinned artifact version differs from this manifest
 - Tier-3 critical dimensions diverge from this manifest
 
-### 4.2 Required evidence for override
+### 5.2 Required evidence for override
 
 Override requires all of:
 1. Explicit instruction packet with execute cue.
