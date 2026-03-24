@@ -83,6 +83,14 @@ Core references:
 
 - `specs/KINFLOW_DAEMON_RUNTIME_CONTRACT_MASTER_v0.1.4.md`
 
+## Canonical OpenClaw Adapter Implementation Spec
+
+- `specs/KINFLOW_OC_ADAPTER_IMPLEMENTATION_SPEC_MASTER_v0.2.4.md`
+
+## Canonical Reason Code Registry
+
+- `specs/KINFLOW_REASON_CODES_CANONICAL.md`
+
 ## Key Behaviors
 ### Idempotency
 Same intent fingerprint + same state resolves to same terminal mutation.
@@ -155,6 +163,7 @@ Every lifecycle step emits append-only, correlated audit events with reason code
 - `docs/KINFLOW_P2A_VERIFICATION_EVIDENCE.md` — P2-A contract verification evidence and matrix
 - `docs/KINFLOW_PHASE1_EXIT_EVIDENCE_MASTER.md` — Phase 1 exit criteria assessment and evidence matrix
 - `docs/KINFLOW_OC_GATEWAY_ASSUMPTION_PROBE.md` — deterministic gateway assumption probe evidence (Discord/WhatsApp/error-shape)
+- `docs/KINFLOW_SPEC_FAMILY_ALIGNMENT_REPORT_2026-03-24.md` — cross-spec alignment packet report for issues #1–#16
 - `specs/KINFLOW_CONTRACT_FREEZE_MANIFEST_PHASE0_5.md` — Phase 0.5 canonical freeze manifest (pinned versions + hashes + change-control)
 
 ---
