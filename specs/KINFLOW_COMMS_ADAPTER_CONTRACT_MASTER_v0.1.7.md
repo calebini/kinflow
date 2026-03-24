@@ -4,7 +4,7 @@ run_code: 4321
 installed_utc: 2026-03-21T16:37:02Z
 status: canonical
 
-Kinflow Comms Adapter Contract (Master Copy v0.1.7)
+Kinflow Comms Adapter Contract (Master Copy v0.1.8)
 0) Convergence Declaration
 Phase: MID
 Tier Target: T5-STRICT
@@ -315,6 +315,10 @@ stale if now_utc - snapshot_ts_utc > max_health_age_ms
 strict => DOWN
 non_strict => DEGRADED
 stale UP prohibited
+
+Extension-field rule (deterministic):
+Adapters MAY emit adapter-specific health extension fields, but extensions MUST NOT redefine or conflict with required AdapterHealth fields.
+`snapshot_ts_utc` remains the sole freshness/TTL authority for this contract.
 
 ---
 

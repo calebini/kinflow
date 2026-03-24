@@ -67,13 +67,13 @@ Core references:
 
 ## Canonical Persistence Spec
 
-- `specs/KINFLOW_DURABLE_PERSISTENCE_SPEC_MASTER_v0.2.6.md` (content version: v0.2.7)
+- `specs/KINFLOW_DURABLE_PERSISTENCE_SPEC_MASTER_v0.2.6.md` (content version: v0.2.8)
 
 ---
 
 ## Canonical Comms Adapter Spec
 
-- `specs/KINFLOW_COMMS_ADAPTER_CONTRACT_MASTER_v0.1.7.md`
+- `specs/KINFLOW_COMMS_ADAPTER_CONTRACT_MASTER_v0.1.7.md` (content version: v0.1.8)
 
 ## Canonical Production Plan Checklist
 
@@ -85,7 +85,7 @@ Core references:
 
 ## Canonical OpenClaw Adapter Implementation Spec
 
-- `specs/KINFLOW_OC_ADAPTER_IMPLEMENTATION_SPEC_MASTER_v0.2.4.md`
+- `specs/KINFLOW_OC_ADAPTER_IMPLEMENTATION_SPEC_MASTER_v0.2.4.md` (content version: v0.2.5)
 
 ## Canonical Reason Code Registry
 
@@ -164,6 +164,7 @@ Every lifecycle step emits append-only, correlated audit events with reason code
 - `docs/KINFLOW_PHASE1_EXIT_EVIDENCE_MASTER.md` — Phase 1 exit criteria assessment and evidence matrix
 - `docs/KINFLOW_OC_GATEWAY_ASSUMPTION_PROBE.md` — deterministic gateway assumption probe evidence (Discord/WhatsApp/error-shape)
 - `docs/KINFLOW_SPEC_FAMILY_ALIGNMENT_REPORT_2026-03-24.md` — cross-spec alignment packet report for issues #1–#16
+- `docs/KINFLOW_R2_MAPPING_HEALTH_RETRY_CLOSURE_REPORT.md` — Issue B/C/D closure packet (mapping completeness, health extension semantics, retry-window residency)
 - `docs/KINFLOW_ARCH_DECISION_ISSUE3_ADAPTER_RESULTS_VS_DELIVERY_ATTEMPTS_2026-03-24.md` — authoritative Issue #3 architecture decision (single-store persistence model)
 - `docs/KINFLOW_SPEC_BASELINE_DECLARATION_POST_ISSUE3_2026-03-24.md` — post-Issue #3 re-baseline declaration for P2-B continuation gate
 - `specs/KINFLOW_CONTRACT_FREEZE_MANIFEST_PHASE0_5.md` — Phase 0.5 canonical freeze manifest (pinned versions + hashes + change-control)

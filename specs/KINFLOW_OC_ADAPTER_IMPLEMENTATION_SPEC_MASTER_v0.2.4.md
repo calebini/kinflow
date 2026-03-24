@@ -6,7 +6,7 @@ installed_utc: 2026-03-24T11:29:55Z
 status: canonical
 ---
 
-Kinflow OpenClaw Adapter Implementation Spec (Master Copy v0.2.4)
+Kinflow OpenClaw Adapter Implementation Spec (Master Copy v0.2.5)
 0) Convergence Declaration
 Review Phase: final
 Tier Entry Mode: T5-STRICT
@@ -345,7 +345,11 @@ max_health_age_ms: int > 0
 health_fail_mode: HealthFailMode
 details_json: JsonObject|null
 details_schema_version: int|null
-event_ts_utc: UtcTimestamp
+event_ts_utc: UtcTimestamp (OC-adapter-specific extension field: timestamp of adapter health-event emission; diagnostic/event-stream anchor only)
+
+Non-conflict rule:
+- snapshot_ts_utc is authoritative for health freshness/TTL evaluation.
+- event_ts_utc MUST NOT be used as a substitute TTL anchor and MUST NOT alter state derivation defined by snapshot_ts_utc.
 
 Null rule:
 details_json null => details_schema_version null

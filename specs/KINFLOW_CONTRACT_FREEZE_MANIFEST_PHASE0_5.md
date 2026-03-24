@@ -2,9 +2,9 @@
 
 status: canonical
 freeze_phase: 0.5
-freeze_timestamp_utc: 2026-03-24T23:00:00Z
-installed_by_instruction_id: KINFLOW-R1-REASONCODE-AUDIT-CLOSURE-20260324-001
-run_code: 4353
+freeze_timestamp_utc: 2026-03-24T23:40:00Z
+installed_by_instruction_id: KINFLOW-R2-MAPPING-HEALTH-RETRY-CLOSURE-20260324-001
+run_code: 4354
 
 ## 1) Pinned canonical artifacts (version + absolute path + sha256)
 
@@ -12,10 +12,10 @@ run_code: 4353
 |---|---|---|---|
 | Requirements master | v0 | `/home/agent/projects/apps/kinflow/requirements/KINFLOW_MASTER_REQUIREMENTS_UNIFIED_V0.md` | `e2567d2d15269716808a72908133e289664f4c7ba4606f1add61e30b18de9933` |
 | Architecture master | v0 | `/home/agent/projects/apps/kinflow/architecture/KINFLOW_V0_ARCHITECTURE_BRIEF_MASTER.md` | `d4a5835efe0f50a1b8c5b26a8934f0331377f95d19bf6ebc4319025214ad34ae` |
-| Persistence spec master | v0.2.7 | `/home/agent/projects/apps/kinflow/specs/KINFLOW_DURABLE_PERSISTENCE_SPEC_MASTER_v0.2.6.md` | `3940c942452776f421a94b7c63b9093ea0fdc1b9284e39f43e9d392e26a8b75e` |
-| Comms adapter contract master | v0.1.7 | `/home/agent/projects/apps/kinflow/specs/KINFLOW_COMMS_ADAPTER_CONTRACT_MASTER_v0.1.7.md` | `a1eb2ece0f25fce7c85292a153d9d60d30fd98230a0774a5e5df5fef57cb46e3` |
+| Persistence spec master | v0.2.8 | `/home/agent/projects/apps/kinflow/specs/KINFLOW_DURABLE_PERSISTENCE_SPEC_MASTER_v0.2.6.md` | `469542273fe49203f6df85f38cf2153e6bcabf8d48ff5e87758858ebe75df6ec` |
+| Comms adapter contract master | v0.1.8 | `/home/agent/projects/apps/kinflow/specs/KINFLOW_COMMS_ADAPTER_CONTRACT_MASTER_v0.1.7.md` | `82833506d7d65e2528c027e95b9ed650f50b593d2e7ecbba94b8425be827f01f` |
 | Daemon runtime contract master | v0.1.4 | `/home/agent/projects/apps/kinflow/specs/KINFLOW_DAEMON_RUNTIME_CONTRACT_MASTER_v0.1.4.md` | `50111cf0173b2023ad92a0c7b08ceae0e85163d3fc117234dc8d400ac8beaded` |
-| OC adapter implementation spec master | v0.2.4 | `/home/agent/projects/apps/kinflow/specs/KINFLOW_OC_ADAPTER_IMPLEMENTATION_SPEC_MASTER_v0.2.4.md` | `dc1e4abdf3d034ac80328e7e32d7bda40b371ab3604b3f6b751f3fe47fc49fb6` |
+| OC adapter implementation spec master | v0.2.5 | `/home/agent/projects/apps/kinflow/specs/KINFLOW_OC_ADAPTER_IMPLEMENTATION_SPEC_MASTER_v0.2.4.md` | `23b99efcb3bfc8b547a2a8e2a67e58fa226c7f02ce689da64d365f5b7adabd4d` |
 | Reason-code canonical registry | v1.0.3 | `/home/agent/projects/apps/kinflow/specs/KINFLOW_REASON_CODES_CANONICAL.md` | `7aa08628acf0633480c5f496fc632f24226cdfabad8aa8b9c34ab68e37d04742` |
 | Production plan checklist master | master-unversioned | `/home/agent/projects/apps/kinflow/specs/KINFLOW_PRODUCTION_PLAN_CHECKLIST_MASTER.md` | `d9a630f28c56ca24cfa8ec24f08787f8f009c7d6433e352606de8aa002efb6a1` |
 
