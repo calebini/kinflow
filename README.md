@@ -67,7 +67,7 @@ Core references:
 
 ## Canonical Persistence Spec
 
-- `specs/KINFLOW_DURABLE_PERSISTENCE_SPEC_MASTER_v0.2.6.md`
+- `specs/KINFLOW_DURABLE_PERSISTENCE_SPEC_MASTER_v0.2.6.md` (content version: v0.2.7)
 
 ---
 
@@ -143,7 +143,7 @@ Every lifecycle step emits append-only, correlated audit events with reason code
 - `src/ctx002_v0/persistence/db.py` — P1-A migration/bootstrap/FK/checksum/dirty enforcement primitives
 - `src/ctx002_v0/persistence/reason_binding.py` — canonical reason-code source binding validation scaffold
 - `src/ctx002_v0/persistence/store.py` — repository abstraction + in-memory/sqlite state stores
-- `migrations/0001_p1a_schema_foundation.sql` — canonical SQLite schema + enum seeds (v0.2.6-aligned)
+- `migrations/0001_p1a_schema_foundation.sql` — canonical SQLite schema + enum seeds (v0.2.7-aligned)
 - `tests/test_acceptance_v0.py` — deterministic acceptance harness
 - `tests/test_p1a_schema_migrations.py` — P1-A schema/migration guard test suite
 - `tests/test_p1b_repo_integration.py` — P1-B repository integration suite

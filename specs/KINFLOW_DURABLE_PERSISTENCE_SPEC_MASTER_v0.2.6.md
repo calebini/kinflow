@@ -4,7 +4,7 @@ run_code: 4318
 installed_utc: 2026-03-20T12:16:17Z
 status: canonical
 
-Kinflow Durable Persistence Spec (Master Copy v0.2.6 — Convergence-Hardened)
+Kinflow Durable Persistence Spec (Master Copy v0.2.7 — Convergence-Hardened)
 0) Convergence Declaration (Non-Negotiable)
 Convergence Phase: MID
 Convergence Tier: T5-STRICT
@@ -67,7 +67,7 @@ enum_attempt_status
 status TEXT PRIMARY KEY
 version_tag TEXT NOT NULL
 
-3.2 Baseline enum content (v0.2.6)
+3.2 Baseline enum content (v0.2.7)
 Reminder statuses
 scheduled (terminal=0, schedulable=1)
 attempted (terminal=0, schedulable=1)
@@ -87,6 +87,12 @@ blocked
 Reason-code canonical set (minimum)
 Success:
 DELIVERED_SUCCESS
+
+Lifecycle stage success (non-delivery audit stages):
+INTAKE_RECEIVED
+CONFIRMATION_ACCEPTED
+SCHEDULE_QUEUED
+
 Mutation:
 RESOLVER_EXPLICIT
 RESOLVER_MATCHED
@@ -241,7 +247,7 @@ reminder_id TEXT NOT NULL
 attempt_index INTEGER NOT NULL
 attempted_at_utc TEXT NOT NULL
 status TEXT NOT NULL
-reason_code TEXT NOT NULL -- MUST be DELIVERED_SUCCESS for successful delivery stage; non-delivery stages MUST use explicit stage reason codes
+reason_code TEXT NOT NULL -- MUST be canonical from KINFLOW_REASON_CODES_CANONICAL.md; successful delivery stage MUST use DELIVERED_SUCCESS; every non-delivery stage row MUST carry an explicit canonical reason code
 provider_ref TEXT NULL
 provider_status_code TEXT NULL
 provider_error_text TEXT NULL
@@ -298,7 +304,7 @@ message_id TEXT NOT NULL
 entity_type TEXT NOT NULL
 entity_id TEXT NOT NULL
 stage TEXT NOT NULL
-reason_code TEXT NOT NULL -- MUST be DELIVERED_SUCCESS for successful delivery stage; non-delivery stages MUST use explicit stage reason codes
+reason_code TEXT NOT NULL -- MUST be canonical from KINFLOW_REASON_CODES_CANONICAL.md; successful delivery stage MUST use DELIVERED_SUCCESS; every non-delivery stage row MUST carry an explicit canonical reason code
 payload_schema_version INTEGER NOT NULL
 payload_json TEXT NOT NULL
 FOREIGN KEY (stage) REFERENCES enum_audit_stages(stage)
@@ -311,7 +317,7 @@ send_time_local TEXT NOT NULL
 timezone TEXT NOT NULL
 include_completed INTEGER NOT NULL DEFAULT 0
 updated_at_utc TEXT NOT NULL
-v0.2.6 scope note:
+v0.2.7 scope note:
 lifecycle-minimal stub; strict governance deferred to later phase.
 
 6.9 system_state
@@ -404,6 +410,7 @@ delivery runner: attempt outcome and retry transitions
 reconciler: recovery mutations
 mutation engine: resolver/version/lifecycle transitions
 audit writer: persisted reason_code for every stage record
+audit writer: every emitted audit stage row MUST carry a canonical reason_code (NOT NULL + FK-valid)
 
 ---
 
