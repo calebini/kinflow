@@ -203,6 +203,23 @@ class FamilySchedulerV0:
             if target is None or target.timezone is None:
                 reminder.status = "blocked"
                 self._store.update_reminder(reminder)
+                self._store.append_delivery_attempt(
+                    attempt_id=f"att-{reminder.reminder_id}-{reminder.attempts + 1}",
+                    reminder_id=reminder.reminder_id,
+                    attempt_index=reminder.attempts + 1,
+                    attempted_at_utc=now_utc,
+                    status="blocked",
+                    reason_code=ReasonCode.TZ_MISSING.value,
+                    provider_ref=None,
+                    provider_status_code=None,
+                    provider_error_text="timezone missing",
+                    provider_accept_only=False,
+                    delivery_confidence="none",
+                    result_at_utc=now_utc,
+                    trace_id="delivery",
+                    causation_id=reminder.reminder_id,
+                    source_adapter_attempt_id=None,
+                )
                 outcomes.append((reminder.dedupe_key, ReasonCode.TZ_MISSING))
                 self._append_audit("delivery", reminder.reminder_id, "delivery", ReasonCode.TZ_MISSING, reminder.dedupe_key)
                 continue
@@ -211,6 +228,23 @@ class FamilySchedulerV0:
             if self._is_quiet_hour(local_hour, target.quiet_hours_start, target.quiet_hours_end):
                 reminder.status = "suppressed"
                 self._store.update_reminder(reminder)
+                self._store.append_delivery_attempt(
+                    attempt_id=f"att-{reminder.reminder_id}-{reminder.attempts + 1}",
+                    reminder_id=reminder.reminder_id,
+                    attempt_index=reminder.attempts + 1,
+                    attempted_at_utc=now_utc,
+                    status="suppressed",
+                    reason_code=ReasonCode.SUPPRESSED_QUIET_HOURS.value,
+                    provider_ref=None,
+                    provider_status_code=None,
+                    provider_error_text="quiet_hours",
+                    provider_accept_only=False,
+                    delivery_confidence="none",
+                    result_at_utc=now_utc,
+                    trace_id="delivery",
+                    causation_id=reminder.reminder_id,
+                    source_adapter_attempt_id=None,
+                )
                 outcomes.append((reminder.dedupe_key, ReasonCode.SUPPRESSED_QUIET_HOURS))
                 self._append_audit(
                     "delivery",
@@ -233,15 +267,49 @@ class FamilySchedulerV0:
                 reminder.status = "delivered"
                 self._store.update_reminder(reminder)
                 self._visible_delivery_keys.add(delivery_key)
-                outcomes.append((delivery_key, ReasonCode.DELIVERED))
-                self._append_audit("delivery", reminder.reminder_id, "delivery", ReasonCode.DELIVERED, delivery_key)
+                outcomes.append((delivery_key, ReasonCode.DELIVERED_SUCCESS))
+                self._store.append_delivery_attempt(
+                    attempt_id=f"att-{reminder.reminder_id}-{reminder.attempts}",
+                    reminder_id=reminder.reminder_id,
+                    attempt_index=reminder.attempts,
+                    attempted_at_utc=now_utc,
+                    status="delivered",
+                    reason_code=ReasonCode.DELIVERED_SUCCESS.value,
+                    provider_ref=delivery_key,
+                    provider_status_code="ok",
+                    provider_error_text=None,
+                    provider_accept_only=False,
+                    delivery_confidence="provider_confirmed",
+                    result_at_utc=now_utc,
+                    trace_id="delivery",
+                    causation_id=reminder.reminder_id,
+                    source_adapter_attempt_id=None,
+                )
+                self._append_audit("delivery", reminder.reminder_id, "delivery", ReasonCode.DELIVERED_SUCCESS, delivery_key)
                 continue
 
-            self._append_audit("delivery", reminder.reminder_id, "delivery", ReasonCode.FAILED_PROVIDER, delivery_key)
+            self._append_audit("delivery", reminder.reminder_id, "delivery", ReasonCode.FAILED_PROVIDER_TRANSIENT, delivery_key)
             retry_limit = min(self.max_retries, self._store.get_max_retry_attempts())
             if reminder.attempts > retry_limit:
                 reminder.status = "failed"
                 self._store.update_reminder(reminder)
+                self._store.append_delivery_attempt(
+                    attempt_id=f"att-{reminder.reminder_id}-{reminder.attempts}",
+                    reminder_id=reminder.reminder_id,
+                    attempt_index=reminder.attempts,
+                    attempted_at_utc=now_utc,
+                    status="failed",
+                    reason_code=ReasonCode.FAILED_RETRY_EXHAUSTED.value,
+                    provider_ref=delivery_key,
+                    provider_status_code="retry_exhausted",
+                    provider_error_text="retry exhausted",
+                    provider_accept_only=False,
+                    delivery_confidence="none",
+                    result_at_utc=now_utc,
+                    trace_id="delivery",
+                    causation_id=reminder.reminder_id,
+                    source_adapter_attempt_id=None,
+                )
                 outcomes.append((delivery_key, ReasonCode.FAILED_RETRY_EXHAUSTED))
                 self._append_audit(
                     "delivery",
@@ -253,7 +321,24 @@ class FamilySchedulerV0:
             else:
                 reminder.next_attempt_at_utc = now_utc + timedelta(minutes=self.retry_delay_minutes)
                 self._store.update_reminder(reminder)
-                outcomes.append((delivery_key, ReasonCode.FAILED_PROVIDER))
+                self._store.append_delivery_attempt(
+                    attempt_id=f"att-{reminder.reminder_id}-{reminder.attempts}",
+                    reminder_id=reminder.reminder_id,
+                    attempt_index=reminder.attempts,
+                    attempted_at_utc=now_utc,
+                    status="failed",
+                    reason_code=ReasonCode.FAILED_PROVIDER_TRANSIENT.value,
+                    provider_ref=delivery_key,
+                    provider_status_code="transient",
+                    provider_error_text="provider transient failure",
+                    provider_accept_only=False,
+                    delivery_confidence="none",
+                    result_at_utc=now_utc,
+                    trace_id="delivery",
+                    causation_id=reminder.reminder_id,
+                    source_adapter_attempt_id=None,
+                )
+                outcomes.append((delivery_key, ReasonCode.FAILED_PROVIDER_TRANSIENT))
         return outcomes
 
     def run_reconciliation_batch(self, now_utc: datetime, *, batch_size: int = 50) -> dict:

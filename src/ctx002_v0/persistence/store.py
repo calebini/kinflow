@@ -72,6 +72,26 @@ class StateStore(Protocol):
 
     def get_max_retry_attempts(self) -> int: ...
 
+    def append_delivery_attempt(
+        self,
+        *,
+        attempt_id: str,
+        reminder_id: str,
+        attempt_index: int,
+        attempted_at_utc: datetime,
+        status: str,
+        reason_code: str,
+        provider_ref: str | None,
+        provider_status_code: str | None,
+        provider_error_text: str | None,
+        provider_accept_only: bool,
+        delivery_confidence: str,
+        result_at_utc: datetime,
+        trace_id: str,
+        causation_id: str,
+        source_adapter_attempt_id: str | None,
+    ) -> None: ...
+
 
 class InMemoryStateStore:
     def __init__(self) -> None:
@@ -84,6 +104,7 @@ class InMemoryStateStore:
         self.runtime_mode = "normal"
         self.idempotency_window_hours = 24
         self.max_retry_attempts = 3
+        self.delivery_attempts: list[dict[str, object]] = []
 
     def get_message_receipt(self, channel: str, conversation_id: str, message_id: str) -> dict | None:
         row = self.receipts.get((channel, conversation_id, message_id))
@@ -191,6 +212,45 @@ class InMemoryStateStore:
 
     def get_max_retry_attempts(self) -> int:
         return self.max_retry_attempts
+
+    def append_delivery_attempt(
+        self,
+        *,
+        attempt_id: str,
+        reminder_id: str,
+        attempt_index: int,
+        attempted_at_utc: datetime,
+        status: str,
+        reason_code: str,
+        provider_ref: str | None,
+        provider_status_code: str | None,
+        provider_error_text: str | None,
+        provider_accept_only: bool,
+        delivery_confidence: str,
+        result_at_utc: datetime,
+        trace_id: str,
+        causation_id: str,
+        source_adapter_attempt_id: str | None,
+    ) -> None:
+        self.delivery_attempts.append(
+            {
+                "attempt_id": attempt_id,
+                "reminder_id": reminder_id,
+                "attempt_index": attempt_index,
+                "attempted_at_utc": attempted_at_utc,
+                "status": status,
+                "reason_code": reason_code,
+                "provider_ref": provider_ref,
+                "provider_status_code": provider_status_code,
+                "provider_error_text": provider_error_text,
+                "provider_accept_only": provider_accept_only,
+                "delivery_confidence": delivery_confidence,
+                "result_at_utc": result_at_utc,
+                "trace_id": trace_id,
+                "causation_id": causation_id,
+                "source_adapter_attempt_id": source_adapter_attempt_id,
+            }
+        )
 
 
 @dataclass
@@ -613,3 +673,50 @@ class SqliteStateStore:
     def get_max_retry_attempts(self) -> int:
         row = self.conn.execute("SELECT value FROM system_state WHERE key='max_retry_attempts'").fetchone()
         return int(row["value"]) if row else 3
+
+    def append_delivery_attempt(
+        self,
+        *,
+        attempt_id: str,
+        reminder_id: str,
+        attempt_index: int,
+        attempted_at_utc: datetime,
+        status: str,
+        reason_code: str,
+        provider_ref: str | None,
+        provider_status_code: str | None,
+        provider_error_text: str | None,
+        provider_accept_only: bool,
+        delivery_confidence: str,
+        result_at_utc: datetime,
+        trace_id: str,
+        causation_id: str,
+        source_adapter_attempt_id: str | None,
+    ) -> None:
+        self.conn.execute(
+            """
+            INSERT INTO delivery_attempts(
+                attempt_id, reminder_id, attempt_index, attempted_at_utc, status, reason_code,
+                provider_ref, provider_status_code, provider_error_text, provider_accept_only,
+                delivery_confidence, result_at_utc, trace_id, causation_id, source_adapter_attempt_id
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                attempt_id,
+                reminder_id,
+                attempt_index,
+                attempted_at_utc.isoformat(),
+                status,
+                reason_code,
+                provider_ref,
+                provider_status_code,
+                provider_error_text,
+                int(provider_accept_only),
+                delivery_confidence,
+                result_at_utc.isoformat(),
+                trace_id,
+                causation_id,
+                source_adapter_attempt_id,
+            ),
+        )
+        self.conn.commit()
