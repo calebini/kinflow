@@ -80,7 +80,9 @@ class P1BRepoIntegrationTests(unittest.TestCase):
             cancel = db.process_intent(_intent("tx3", action="cancel", event_id=create["event_id"]))
 
             conn = db._store.conn  # type: ignore[attr-defined]
-            event_row = conn.execute("SELECT current_version, status FROM events WHERE event_id = ?", (create["event_id"],)).fetchone()
+            event_row = conn.execute(
+                "SELECT current_version, status FROM events WHERE event_id = ?", (create["event_id"],)
+            ).fetchone()
             version_rows = conn.execute(
                 "SELECT COUNT(*) AS n FROM event_versions WHERE event_id = ?",
                 (create["event_id"],),

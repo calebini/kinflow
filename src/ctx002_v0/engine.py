@@ -174,7 +174,9 @@ class FamilySchedulerV0:
                 "reason_code": resolver_code.value,
             }
         except VersionConflictError:
-            self._append_audit(correlation_id, message_id, "mutation", ReasonCode.VERSION_CONFLICT_RETRY, resolved_event_id or "none")
+            self._append_audit(
+                correlation_id, message_id, "mutation", ReasonCode.VERSION_CONFLICT_RETRY, resolved_event_id or "none"
+            )
             result = {
                 "status": "conflict",
                 "persisted": False,
@@ -194,7 +196,9 @@ class FamilySchedulerV0:
 
     def attempt_due_deliveries(self, now_utc: datetime, provider: ProviderFn) -> list[tuple[str, ReasonCode]]:
         if self._store.get_runtime_mode() == "capture_only":
-            self._append_audit("system", "capture_only", "delivery", ReasonCode.CAPTURE_ONLY_BLOCKED, "delivery blocked")
+            self._append_audit(
+                "system", "capture_only", "delivery", ReasonCode.CAPTURE_ONLY_BLOCKED, "delivery blocked"
+            )
             return [("capture_only", ReasonCode.CAPTURE_ONLY_BLOCKED)]
 
         outcomes: list[tuple[str, ReasonCode]] = []
@@ -221,7 +225,9 @@ class FamilySchedulerV0:
                     source_adapter_attempt_id=None,
                 )
                 outcomes.append((reminder.dedupe_key, ReasonCode.TZ_MISSING))
-                self._append_audit("delivery", reminder.reminder_id, "delivery", ReasonCode.TZ_MISSING, reminder.dedupe_key)
+                self._append_audit(
+                    "delivery", reminder.reminder_id, "delivery", ReasonCode.TZ_MISSING, reminder.dedupe_key
+                )
                 continue
 
             local_hour = now_utc.astimezone(ZoneInfo(target.timezone)).hour
@@ -285,10 +291,14 @@ class FamilySchedulerV0:
                     causation_id=reminder.reminder_id,
                     source_adapter_attempt_id=None,
                 )
-                self._append_audit("delivery", reminder.reminder_id, "delivery", ReasonCode.DELIVERED_SUCCESS, delivery_key)
+                self._append_audit(
+                    "delivery", reminder.reminder_id, "delivery", ReasonCode.DELIVERED_SUCCESS, delivery_key
+                )
                 continue
 
-            self._append_audit("delivery", reminder.reminder_id, "delivery", ReasonCode.FAILED_PROVIDER_TRANSIENT, delivery_key)
+            self._append_audit(
+                "delivery", reminder.reminder_id, "delivery", ReasonCode.FAILED_PROVIDER_TRANSIENT, delivery_key
+            )
             retry_limit = min(self.max_retries, self._store.get_max_retry_attempts())
             if reminder.attempts > retry_limit:
                 reminder.status = "failed"
@@ -343,13 +353,19 @@ class FamilySchedulerV0:
 
     def run_reconciliation_batch(self, now_utc: datetime, *, batch_size: int = 50) -> dict:
         if self._store.get_runtime_mode() == "capture_only":
-            self._append_audit("system", "capture_only", "recovery", ReasonCode.CAPTURE_ONLY_BLOCKED, "recovery blocked")
+            self._append_audit(
+                "system", "capture_only", "recovery", ReasonCode.CAPTURE_ONLY_BLOCKED, "recovery blocked"
+            )
             return {"processed": 0, "has_more": False, "reason_code": ReasonCode.CAPTURE_ONLY_BLOCKED.value}
 
         due = list(self._store.list_due_reminders(now_utc, limit=batch_size))
         processed = 0
         for reminder in due:
-            if reminder.status == "attempted" and reminder.next_attempt_at_utc and reminder.next_attempt_at_utc <= now_utc:
+            if (
+                reminder.status == "attempted"
+                and reminder.next_attempt_at_utc
+                and reminder.next_attempt_at_utc <= now_utc
+            ):
                 reminder.status = "scheduled"
                 reminder.next_attempt_at_utc = None
                 self._store.update_reminder(reminder)
@@ -382,7 +398,9 @@ class FamilySchedulerV0:
             local_start = event.start_at_local.astimezone(ZoneInfo(event.timezone)).astimezone(tz)
             bucket = today if local_start.date() == local_day else upcoming
             if recipient_id in event.audience:
-                bucket.append({"event_id": event.event_id, "title": event.title, "local_start": local_start.isoformat()})
+                bucket.append(
+                    {"event_id": event.event_id, "title": event.title, "local_start": local_start.isoformat()}
+                )
 
         return {
             "today": sorted(today, key=lambda row: row["local_start"]),
@@ -515,7 +533,9 @@ class FamilySchedulerV0:
         for recipient_id in event.audience:
             target = self._store.get_delivery_target(recipient_id)
             reminder_id = f"rem-{event.event_id}-v{event.version}-{recipient_id}-{event.reminder_offset_minutes}"
-            dedupe_key = f"{event.event_id}:{event.version}:{recipient_id}:{event.reminder_offset_minutes}:{trigger.isoformat()}"
+            dedupe_key = (
+                f"{event.event_id}:{event.version}:{recipient_id}:{event.reminder_offset_minutes}:{trigger.isoformat()}"
+            )
 
             if target is None or target.timezone is None:
                 reminder = Reminder(

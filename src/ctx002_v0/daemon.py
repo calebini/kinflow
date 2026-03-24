@@ -1,11 +1,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import datetime
 from math import floor
 from typing import Callable, Literal
 from uuid import uuid4
-
 
 HealthState = Literal["DOWN", "DEGRADED", "UP"]
 RuntimeMode = Literal["normal", "capture_only"]
@@ -81,7 +80,7 @@ def validate_daemon_config(raw: dict) -> DaemonConfig:
         value = raw.get(name)
         if not isinstance(value, int):
             raise ConfigValidationError(f"{name} must be int")
-        if (value <= minimum if gt else value < minimum):
+        if value <= minimum if gt else value < minimum:
             op = ">" if gt else ">="
             raise ConfigValidationError(f"{name} must be {op} {minimum}")
         return value
@@ -213,7 +212,9 @@ class FairnessTracker:
     def __init__(self) -> None:
         self._deferral_by_row: dict[str, int] = {}
 
-    def record_loop(self, eligible_ids: list[str], processed_ids: list[str], blocked_reason_by_id: dict[str, str]) -> None:
+    def record_loop(
+        self, eligible_ids: list[str], processed_ids: list[str], blocked_reason_by_id: dict[str, str]
+    ) -> None:
         processed = set(processed_ids)
         for rid in eligible_ids:
             reason = blocked_reason_by_id.get(rid)
@@ -255,7 +256,9 @@ class DaemonRuntime:
 
     def startup(self, now: datetime) -> HealthSnapshot:
         # Ordered startup semantics represented by event log ordering.
-        self.emit_event({"stage": "startup", "causation_id": f"ROOT:STARTUP:{self.trace_id}", "step": "init_health_down"})
+        self.emit_event(
+            {"stage": "startup", "causation_id": f"ROOT:STARTUP:{self.trace_id}", "step": "init_health_down"}
+        )
         self.health_state = "DEGRADED"
         self.is_ready = True
         snap = HealthSnapshot(
@@ -292,7 +295,15 @@ class DaemonRuntime:
             if runtime_mode == "capture_only":
                 rows_blocked += 1
                 blocked_reason_by_id[rid] = "CAPTURE_ONLY_BLOCKED"
-                self.emit_event({"event": "CAPTURE_ONLY_BLOCKED", "row_id": rid, "cycle_id": cycle_id, "trace_id": self.trace_id, "causation_id": causation_id})
+                self.emit_event(
+                    {
+                        "event": "CAPTURE_ONLY_BLOCKED",
+                        "row_id": rid,
+                        "cycle_id": cycle_id,
+                        "trace_id": self.trace_id,
+                        "causation_id": causation_id,
+                    }
+                )
                 continue
             if self.process_candidate(row):
                 rows_processed += 1

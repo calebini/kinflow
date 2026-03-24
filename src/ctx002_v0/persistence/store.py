@@ -17,7 +17,9 @@ class VersionConflictError(RuntimeError):
 class StateStore(Protocol):
     def get_message_receipt(self, channel: str, conversation_id: str, message_id: str) -> dict | None: ...
 
-    def find_recent_receipt_by_intent_hash(self, intent_hash: str, now_utc: datetime, window_hours: int) -> dict | None: ...
+    def find_recent_receipt_by_intent_hash(
+        self, intent_hash: str, now_utc: datetime, window_hours: int
+    ) -> dict | None: ...
 
     def save_message_receipt(
         self,
@@ -307,7 +309,9 @@ class SqliteStateStore:
             offset_minutes=row["offset_minutes"],
             status=row["status"],
             attempts=row["attempts"],
-            next_attempt_at_utc=datetime.fromisoformat(row["next_attempt_at_utc"]) if row["next_attempt_at_utc"] else None,
+            next_attempt_at_utc=datetime.fromisoformat(row["next_attempt_at_utc"])
+            if row["next_attempt_at_utc"]
+            else None,
         )
 
     def get_message_receipt(self, channel: str, conversation_id: str, message_id: str) -> dict | None:
@@ -343,7 +347,9 @@ class SqliteStateStore:
     ) -> None:
         self.conn.execute(
             """
-            INSERT OR REPLACE INTO message_receipts(channel, conversation_id, message_id, correlation_id, intent_hash, result_json, created_at_utc)
+            INSERT OR REPLACE INTO message_receipts(
+                channel, conversation_id, message_id, correlation_id, intent_hash, result_json, created_at_utc
+            )
             VALUES (?, ?, ?, ?, ?, ?, ?)
             """,
             (
@@ -403,7 +409,8 @@ class SqliteStateStore:
         self.conn.execute("BEGIN IMMEDIATE")
         try:
             self.conn.execute(
-                "INSERT INTO events(event_id,current_version,status,created_at_utc,updated_at_utc) VALUES (?, ?, ?, ?, ?)",
+                "INSERT INTO events(event_id,current_version,status,created_at_utc,updated_at_utc) "
+                "VALUES (?, ?, ?, ?, ?)",
                 (event.event_id, event.version, event.status, now, now),
             )
             self.conn.execute(
@@ -441,7 +448,9 @@ class SqliteStateStore:
         expected_previous_version = event.version - 1
         self.conn.execute("BEGIN IMMEDIATE")
         try:
-            current = self.conn.execute("SELECT current_version FROM events WHERE event_id = ?", (event.event_id,)).fetchone()
+            current = self.conn.execute(
+                "SELECT current_version FROM events WHERE event_id = ?", (event.event_id,)
+            ).fetchone()
             if not current:
                 raise RuntimeError(f"missing event: {event.event_id}")
 
@@ -509,7 +518,9 @@ class SqliteStateStore:
 
     def count_due_reminders(self, now_utc: datetime) -> int:
         row = self.conn.execute(
-            "SELECT COUNT(*) AS n FROM reminders WHERE status IN ('scheduled','attempted') AND COALESCE(next_attempt_at_utc, trigger_at_utc) <= ?",
+            "SELECT COUNT(*) AS n FROM reminders "
+            "WHERE status IN ('scheduled','attempted') "
+            "AND COALESCE(next_attempt_at_utc, trigger_at_utc) <= ?",
             (now_utc.isoformat(),),
         ).fetchone()
         return int(row["n"])
@@ -569,7 +580,8 @@ class SqliteStateStore:
         self.conn.execute(
             """
             INSERT OR REPLACE INTO delivery_targets(
-                target_id, person_id, channel, target_ref, timezone, quiet_hours_start, quiet_hours_end, is_active, updated_at_utc
+                target_id, person_id, channel, target_ref, timezone,
+                quiet_hours_start, quiet_hours_end, is_active, updated_at_utc
             ) VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?)
             """,
             (

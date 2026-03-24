@@ -85,7 +85,7 @@ class Packet2SchemaReconciliationTests(unittest.TestCase):
                 0,
                 "UTC",
                 "[]",
-                "[\"p1\"]",
+                '["p1"]',
                 15,
                 "m1",
                 "h1",
@@ -94,7 +94,8 @@ class Packet2SchemaReconciliationTests(unittest.TestCase):
             ),
         )
         conn.execute(
-            "INSERT INTO delivery_targets(target_id,person_id,channel,target_ref,timezone,updated_at_utc) VALUES (?,?,?,?,?,?)",
+            "INSERT INTO delivery_targets(target_id,person_id,channel,target_ref,timezone,updated_at_utc) "
+            "VALUES (?,?,?,?,?,?)",
             ("p1", "p1", "discord", "user:p1", "UTC", "2026-03-24T00:00:00+00:00"),
         )
         conn.execute(
