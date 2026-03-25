@@ -39,7 +39,7 @@ Phase 0.5 — Contract Freeze Gate
 Exit Gate: PASS — Freeze manifest approved; implementation may proceed.
 Evidence:
 - `/home/agent/projects/apps/kinflow/specs/KINFLOW_CONTRACT_FREEZE_MANIFEST_PHASE0_5.md`
-- sha256: `9dc4e7356bd0f3e2ef7a3f77ce297be652dd4c456b7cc55a3ce863531411ea77`
+- sha256: `e17a0c969d5d7d14bb93e75ae1db89a3fe6f59942e48fd65f4fdf641c925d302`
 
 Phase 0.5 completion annotations (concise):
 - Freeze manifest installed via instruction `KINFLOW-FREEZE-MANIFEST-INSTALL-20260321-001` (run_code 4323).

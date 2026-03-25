@@ -17,7 +17,7 @@ run_code: 4354
 | Daemon runtime contract master | v0.1.4 | `/home/agent/projects/apps/kinflow/specs/KINFLOW_DAEMON_RUNTIME_CONTRACT_MASTER_v0.1.4.md` | `50111cf0173b2023ad92a0c7b08ceae0e85163d3fc117234dc8d400ac8beaded` |
 | OC adapter implementation spec master | v0.2.5 | `/home/agent/projects/apps/kinflow/specs/KINFLOW_OC_ADAPTER_IMPLEMENTATION_SPEC_MASTER_v0.2.4.md` | `23b99efcb3bfc8b547a2a8e2a67e58fa226c7f02ce689da64d365f5b7adabd4d` |
 | Reason-code canonical registry | v1.0.3 | `/home/agent/projects/apps/kinflow/specs/KINFLOW_REASON_CODES_CANONICAL.md` | `7aa08628acf0633480c5f496fc632f24226cdfabad8aa8b9c34ab68e37d04742` |
-| Production plan checklist master | master-unversioned | `/home/agent/projects/apps/kinflow/specs/KINFLOW_PRODUCTION_PLAN_CHECKLIST_MASTER.md` | `d9a630f28c56ca24cfa8ec24f08787f8f009c7d6433e352606de8aa002efb6a1` |
+| Production plan checklist master | master-unversioned | `/home/agent/projects/apps/kinflow/specs/KINFLOW_PRODUCTION_PLAN_CHECKLIST_MASTER.md` | `6a2d8780f1cea1c448cd92d8850c9e6cb7f2b37877bedc7c15090ac67156c72f` |
 
 ## 2) Declared Tier-3 critical dimensions (copied from active contracts)
 
