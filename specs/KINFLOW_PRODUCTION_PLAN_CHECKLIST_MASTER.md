@@ -39,11 +39,13 @@ Phase 0.5 — Contract Freeze Gate
 Exit Gate: PASS — Freeze manifest approved; implementation may proceed.
 Evidence:
 - `/home/agent/projects/apps/kinflow/specs/KINFLOW_CONTRACT_FREEZE_MANIFEST_PHASE0_5.md`
-- sha256: `e17a0c969d5d7d14bb93e75ae1db89a3fe6f59942e48fd65f4fdf641c925d302`
+- freeze_authority_pointer: `artifact_path=/home/agent/projects/apps/kinflow/specs/KINFLOW_CONTRACT_FREEZE_MANIFEST_PHASE0_5.md`
+- freeze_hash_display (informational, non-gating): `optional-display-only; authoritative hash is freeze §1`
 
 Phase 0.5 completion annotations (concise):
 - Freeze manifest installed via instruction `KINFLOW-FREEZE-MANIFEST-INSTALL-20260321-001` (run_code 4323).
 - Change-control rules + deterministic block conditions documented in manifest.
+- Authority model: checklist references freeze by stable artifact-path pointer; any displayed freeze hash in this checklist is informational only and cannot hard-fail gate checks.
 
 ---
 

@@ -168,6 +168,7 @@ Every lifecycle step emits append-only, correlated audit events with reason code
 - `docs/KINFLOW_ARCH_DECISION_ISSUE3_ADAPTER_RESULTS_VS_DELIVERY_ATTEMPTS_2026-03-24.md` — authoritative Issue #3 architecture decision (single-store persistence model)
 - `docs/KINFLOW_SPEC_BASELINE_DECLARATION_POST_ISSUE3_2026-03-24.md` — post-Issue #3 re-baseline declaration for P2-B continuation gate
 - `specs/KINFLOW_CONTRACT_FREEZE_MANIFEST_PHASE0_5.md` — Phase 0.5 canonical freeze manifest (pinned versions + hashes + change-control)
+- `docs/KINFLOW_R5_RECIPROCAL_PIN_MODEL_CORRECTION_REPORT.md` — reciprocal freeze↔checklist hash-cycle correction to one-way authoritative pin model
 
 ---
 
