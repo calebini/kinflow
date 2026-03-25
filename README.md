@@ -162,6 +162,9 @@ Every lifecycle step emits append-only, correlated audit events with reason code
 - `docs/KINFLOW_P2A_DAEMON_BASELINE_NOTES.md` — P2-A daemon baseline implementation notes
 - `docs/KINFLOW_P2A_VERIFICATION_EVIDENCE.md` — P2-A contract verification evidence and matrix
 - `docs/KINFLOW_PHASE1_EXIT_EVIDENCE_MASTER.md` — Phase 1 exit criteria assessment and evidence matrix
+- `docs/KINFLOW_PHASE2_EXIT_EVIDENCE_MASTER.md` — Phase 2 consolidated exit evidence and gate lineage (P2-B + P2-C)
+- `docs/KINFLOW_P2B_OC_ADAPTER_CONFORMANCE_EVIDENCE.md` — Phase 2-B OpenClaw adapter conformance evidence
+- `docs/KINFLOW_P2C_E2E_RUNTIME_VERIFICATION_REPORT.md` — Phase 2-C end-to-end runtime verification report
 - `docs/KINFLOW_OC_GATEWAY_ASSUMPTION_PROBE.md` — deterministic gateway assumption probe evidence (Discord/WhatsApp/error-shape)
 - `docs/KINFLOW_SPEC_FAMILY_ALIGNMENT_REPORT_2026-03-24.md` — cross-spec alignment packet report for issues #1–#16
 - `docs/KINFLOW_R2_MAPPING_HEALTH_RETRY_CLOSURE_REPORT.md` — Issue B/C/D closure packet (mapping completeness, health extension semantics, retry-window residency)
