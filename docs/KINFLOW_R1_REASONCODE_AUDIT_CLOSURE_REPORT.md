@@ -53,8 +53,9 @@ Decision rationale:
 | `specs/KINFLOW_PRODUCTION_PLAN_CHECKLIST_MASTER.md` | Rebound freeze manifest sha256 reference. | Non-normative provenance/pin hygiene |
 | `docs/KINFLOW_SPEC_BASELINE_DECLARATION_POST_ISSUE3_2026-03-24.md` | Rebound pinned version/hash table to current canonical artifacts. | Non-normative provenance/pin hygiene |
 | `README.md` | Updated persistence alignment pointer text to content version v0.2.7 and seed-alignment note. | Non-normative discoverability |
-| `/home/agent/projects/_backlog/boards/cortext1.md` | Updated CTX-002 discoverability lines for reason-code/persistence versions. | Non-normative discoverability |
 | `docs/KINFLOW_R1_REASONCODE_AUDIT_CLOSURE_REPORT.md` | Closure evidence/report artifact (this file). | Non-normative evidence |
+
+**Integrity note:** No backlog board mutation occurred in commit a28831b; prior manifest claim corrected.
 
 ---
 
