@@ -165,6 +165,10 @@ Every lifecycle step emits append-only, correlated audit events with reason code
 - `docs/KINFLOW_PHASE2_EXIT_EVIDENCE_MASTER.md` — Phase 2 consolidated exit evidence and gate lineage (P2-B + P2-C)
 - `docs/KINFLOW_P2B_OC_ADAPTER_CONFORMANCE_EVIDENCE.md` — Phase 2-B OpenClaw adapter conformance evidence
 - `docs/KINFLOW_P2C_E2E_RUNTIME_VERIFICATION_REPORT.md` — Phase 2-C end-to-end runtime verification report
+- `docs/KINFLOW_PHASE4_HARDENING_KICKOFF_REPORT.md` — Phase 4 hardening kickoff gate report (drills + readiness verdict)
+- `docs/KINFLOW_OPERATOR_RUNBOOK_PHASE4.md` — operator startup/restart/incident runbook (Phase 4)
+- `docs/KINFLOW_ROLLBACK_RUNBOOK_PHASE4.md` — rollback runbook and restoration proof flow (Phase 4)
+- `scripts/phase4_hardening_drills.py` — deterministic Phase 4 drill runner (restart/failure/rollback)
 - `docs/KINFLOW_OC_GATEWAY_ASSUMPTION_PROBE.md` — deterministic gateway assumption probe evidence (Discord/WhatsApp/error-shape)
 - `docs/KINFLOW_SPEC_FAMILY_ALIGNMENT_REPORT_2026-03-24.md` — cross-spec alignment packet report for issues #1–#16
 - `docs/KINFLOW_R2_MAPPING_HEALTH_RETRY_CLOSURE_REPORT.md` — Issue B/C/D closure packet (mapping completeness, health extension semantics, retry-window residency)
