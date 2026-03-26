@@ -13,7 +13,7 @@ permissions:
 
 jobs:
   lint:
-    name: lint
+    name: Kinflow CI / lint
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -39,7 +39,7 @@ jobs:
         run: ruff check tests
 
   test:
-    name: test
+    name: Kinflow CI / test
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -58,7 +58,7 @@ jobs:
         run: pytest -q
 
   contracts:
-    name: contracts
+    name: Kinflow CI / contracts
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
