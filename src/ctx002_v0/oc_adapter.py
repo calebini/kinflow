@@ -3,6 +3,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any, Callable, Literal
 
 from .persistence.reason_binding import ReasonCodeBinding, validate_reason_code_binding
@@ -192,8 +193,9 @@ class OpenClawGatewayAdapter:
         self._adapter_dedupe_window_ms = adapter_dedupe_window_ms
 
         if reason_binding is None:
+            spec_path = Path(__file__).resolve().parents[2] / "specs" / "KINFLOW_REASON_CODES_CANONICAL.md"
             reason_binding = ReasonCodeBinding(
-                spec_path="/home/agent/projects/apps/kinflow/specs/KINFLOW_REASON_CODES_CANONICAL.md",
+                spec_path=str(spec_path),
                 spec_version="v1.0.3",
                 spec_sha256="7aa08628acf0633480c5f496fc632f24226cdfabad8aa8b9c34ab68e37d04742",
             )
