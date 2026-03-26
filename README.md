@@ -166,6 +166,8 @@ Every lifecycle step emits append-only, correlated audit events with reason code
 - `docs/KINFLOW_P2B_OC_ADAPTER_CONFORMANCE_EVIDENCE.md` — Phase 2-B OpenClaw adapter conformance evidence
 - `docs/KINFLOW_P2C_E2E_RUNTIME_VERIFICATION_REPORT.md` — Phase 2-C end-to-end runtime verification report
 - `docs/KINFLOW_PHASE4_HARDENING_KICKOFF_REPORT.md` — Phase 4 hardening kickoff gate report (drills + readiness verdict)
+- `docs/KINFLOW_PHASE5_HARDENING_CI_MIGRATION_REPORT.md` — Phase 5 CI/migration hardening gate report (initial NO_GO assessment)
+- `docs/KINFLOW_PHASE5_CI_ENFORCEMENT_REMEDIATION_REPORT.md` — Phase 5 CI enforcement remediation report (blocker closure evidence)
 - `docs/KINFLOW_OPERATOR_RUNBOOK_PHASE4.md` — operator startup/restart/incident runbook (Phase 4)
 - `docs/KINFLOW_ROLLBACK_RUNBOOK_PHASE4.md` — rollback runbook and restoration proof flow (Phase 4)
 - `scripts/phase4_hardening_drills.py` — deterministic Phase 4 drill runner (restart/failure/rollback)
