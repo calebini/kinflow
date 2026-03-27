@@ -1,0 +1,10 @@
+{
+  "phase": "5.5",
+  "name": "observability_minimum_kickoff",
+  "artifacts": [
+    "observability/phase5_5/sqlite_signal_queries.sql",
+    "observability/phase5_5/alert_policy.yaml",
+    "scripts/phase5_5_observability_probe.py",
+    "docs/KINFLOW_PHASE5_5_OBSERVABILITY_KICKOFF_REPORT.md"
+  ]
+}

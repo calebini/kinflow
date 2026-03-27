@@ -168,6 +168,10 @@ Every lifecycle step emits append-only, correlated audit events with reason code
 - `docs/KINFLOW_PHASE4_HARDENING_KICKOFF_REPORT.md` — Phase 4 hardening kickoff gate report (drills + readiness verdict)
 - `docs/KINFLOW_PHASE5_HARDENING_CI_MIGRATION_REPORT.md` — Phase 5 CI/migration hardening gate report (initial NO_GO assessment)
 - `docs/KINFLOW_PHASE5_CI_ENFORCEMENT_REMEDIATION_REPORT.md` — Phase 5 CI enforcement remediation report (blocker closure evidence)
+- `docs/KINFLOW_PHASE5_5_OBSERVABILITY_KICKOFF_REPORT.md` — Phase 5.5 observability minimum kickoff report and gate verdict
+- `observability/phase5_5/sqlite_signal_queries.sql` — canonical SQL query pack for replay/retry/blocked signals
+- `observability/phase5_5/alert_policy.yaml` — threshold/severity/runbook mapping for observability minimum
+- `scripts/phase5_5_observability_probe.py` — deterministic trigger/clear probe for all required signals
 - `docs/KINFLOW_OPERATOR_RUNBOOK_PHASE4.md` — operator startup/restart/incident runbook (Phase 4)
 - `docs/KINFLOW_ROLLBACK_RUNBOOK_PHASE4.md` — rollback runbook and restoration proof flow (Phase 4)
 - `scripts/phase4_hardening_drills.py` — deterministic Phase 4 drill runner (restart/failure/rollback)
