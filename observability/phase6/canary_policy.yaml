@@ -1,0 +1,36 @@
+phase: "6"
+name: "phase6_canary_kickoff"
+canary_envelope:
+  target_cohort: "canary_cohort_alpha"
+  channel_subset:
+    - "whatsapp"
+  traffic_cap_percent: 5
+  event_cap: 25
+  duration_minutes: 30
+  include_paths:
+    - "create_event"
+    - "update_event"
+    - "delivery_attempt"
+  exclude_paths:
+    - "cancel_event"
+    - "bulk_backfill"
+rollback_triggers:
+  duplicate_replay_anomaly:
+    threshold: ">=1 in 15m"
+    severity: "high"
+  retry_exhaustion:
+    threshold: ">=1 in 15m"
+    severity: "high"
+  blocked_outcome_spike:
+    threshold: ">=5 in 15m"
+    severity: "medium"
+  ci_protection_drift:
+    threshold: "strict=false or required_contexts_mismatch or approvals<1"
+    severity: "critical"
+  severe_incident:
+    threshold: "any P0/P1 incident declaration"
+    severity: "critical"
+runbook_links:
+  canary_operation: "docs/KINFLOW_OPERATOR_RUNBOOK_PHASE4.md#incident-response-flow"
+  rollback: "docs/KINFLOW_ROLLBACK_RUNBOOK_PHASE4.md"
+  ci_drift: "docs/KINFLOW_PHASE5_CI_ENFORCEMENT_REMEDIATION_REPORT.md"
