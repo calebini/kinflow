@@ -167,7 +167,7 @@ class AcceptanceHarnessTests(unittest.TestCase):
         second = engine.attempt_due_deliveries(now.replace(minute=35), flaky)
         replay = engine.process_intent(_intent("m13", start_at_local=datetime(2026, 3, 18, 18, 0)))
 
-        delivered = [o for o in first + second if o[1] == ReasonCode.DELIVERED]
+        delivered = [o for o in first + second if o[1] == ReasonCode.DELIVERED_SUCCESS]
         self.assertEqual(len(delivered), 1)
         self.assertEqual(replay["status"], "ok")
 

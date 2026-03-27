@@ -64,7 +64,32 @@ Core references:
 - Requirements baseline: `requirements/KINFLOW_MASTER_REQUIREMENTS_UNIFIED_V0.md`
 - Architecture baseline: `architecture/KINFLOW_V0_ARCHITECTURE_BRIEF_MASTER.md`
 
+
+## Canonical Persistence Spec
+
+- `specs/KINFLOW_DURABLE_PERSISTENCE_SPEC_MASTER_v0.2.6.md` (content version: v0.2.8)
+
 ---
+
+## Canonical Comms Adapter Spec
+
+- `specs/KINFLOW_COMMS_ADAPTER_CONTRACT_MASTER_v0.1.7.md` (content version: v0.1.8)
+
+## Canonical Production Plan Checklist
+
+- `specs/KINFLOW_PRODUCTION_PLAN_CHECKLIST_MASTER.md`
+
+## Canonical Daemon Runtime Contract
+
+- `specs/KINFLOW_DAEMON_RUNTIME_CONTRACT_MASTER_v0.1.4.md`
+
+## Canonical OpenClaw Adapter Implementation Spec
+
+- `specs/KINFLOW_OC_ADAPTER_IMPLEMENTATION_SPEC_MASTER_v0.2.4.md` (content version: v0.2.5)
+
+## Canonical Reason Code Registry
+
+- `specs/KINFLOW_REASON_CODES_CANONICAL.md`
 
 ## Key Behaviors
 ### Idempotency
@@ -112,26 +137,78 @@ Every lifecycle step emits append-only, correlated audit events with reason code
 ## Key Files
 
 - `src/ctx002_v0/engine.py` — deterministic lifecycle engine
+- `src/ctx002_v0/daemon.py` — P2-A daemon baseline primitives (contract v0.1.4 aligned)
 - `src/ctx002_v0/models.py` — Event/Reminder/Delivery contracts
 - `src/ctx002_v0/reason_codes.py` — canonical reason-code enums
+- `src/ctx002_v0/persistence/db.py` — P1-A migration/bootstrap/FK/checksum/dirty enforcement primitives
+- `src/ctx002_v0/persistence/reason_binding.py` — canonical reason-code source binding validation scaffold
+- `src/ctx002_v0/persistence/store.py` — repository abstraction + in-memory/sqlite state stores
+- `migrations/0001_p1a_schema_foundation.sql` — canonical SQLite schema + enum seeds (v0.2.7-aligned)
 - `tests/test_acceptance_v0.py` — deterministic acceptance harness
+- `tests/test_p1a_schema_migrations.py` — P1-A schema/migration guard test suite
+- `tests/test_p1b_repo_integration.py` — P1-B repository integration suite
+- `tests/test_p1c_recovery_capture_idempotency.py` — P1-C recovery/capture/idempotency invariant suite
+- `tests/test_p2a_daemon_baseline.py` — P2-A daemon baseline contract conformance suite
 - `docs/KINFLOW_V0_IMPLEMENTATION_NOTES.md` — implementation mapping
 - `docs/KINFLOW_V0_VERIFICATION_EVIDENCE.md` — lint/test evidence
 - `docs/KINFLOW_V0_KNUTH_LANDING_HANDOFF.md` — landing handoff
 - `docs/PROJECT_RENAME_CTX002_TO_KINFLOW.md` — rename/migration note
+- `docs/KINFLOW_P1A_SCHEMA_MIGRATIONS_NOTES.md` — P1-A scope and artifact notes
+- `docs/KINFLOW_P1A_VERIFICATION_EVIDENCE.md` — P1-A verification evidence
+- `docs/KINFLOW_P1B_REPO_INTEGRATION_NOTES.md` — P1-B repository integration notes
+- `docs/KINFLOW_P1B_VERIFICATION_EVIDENCE.md` — P1-B verification evidence
+- `docs/KINFLOW_P1C_RECOVERY_CAPTURE_IDEMPOTENCY_NOTES.md` — P1-C recovery/capture/idempotency notes
+- `docs/KINFLOW_P1C_VERIFICATION_EVIDENCE.md` — P1-C verification evidence
+- `docs/KINFLOW_P2A_DAEMON_BASELINE_NOTES.md` — P2-A daemon baseline implementation notes
+- `docs/KINFLOW_P2A_VERIFICATION_EVIDENCE.md` — P2-A contract verification evidence and matrix
+- `docs/KINFLOW_PHASE1_EXIT_EVIDENCE_MASTER.md` — Phase 1 exit criteria assessment and evidence matrix
+- `docs/KINFLOW_PHASE2_EXIT_EVIDENCE_MASTER.md` — Phase 2 consolidated exit evidence and gate lineage (P2-B + P2-C)
+- `docs/KINFLOW_P2B_OC_ADAPTER_CONFORMANCE_EVIDENCE.md` — Phase 2-B OpenClaw adapter conformance evidence
+- `docs/KINFLOW_P2C_E2E_RUNTIME_VERIFICATION_REPORT.md` — Phase 2-C end-to-end runtime verification report
+- `docs/KINFLOW_PHASE4_HARDENING_KICKOFF_REPORT.md` — Phase 4 hardening kickoff gate report (drills + readiness verdict)
+- `docs/KINFLOW_PHASE5_HARDENING_CI_MIGRATION_REPORT.md` — Phase 5 CI/migration hardening gate report (initial NO_GO assessment)
+- `docs/KINFLOW_PHASE5_CI_ENFORCEMENT_REMEDIATION_REPORT.md` — Phase 5 CI enforcement remediation report (blocker closure evidence)
+- `docs/KINFLOW_OPERATOR_RUNBOOK_PHASE4.md` — operator startup/restart/incident runbook (Phase 4)
+- `docs/KINFLOW_ROLLBACK_RUNBOOK_PHASE4.md` — rollback runbook and restoration proof flow (Phase 4)
+- `scripts/phase4_hardening_drills.py` — deterministic Phase 4 drill runner (restart/failure/rollback)
+- `docs/KINFLOW_OC_GATEWAY_ASSUMPTION_PROBE.md` — deterministic gateway assumption probe evidence (Discord/WhatsApp/error-shape)
+- `docs/KINFLOW_SPEC_FAMILY_ALIGNMENT_REPORT_2026-03-24.md` — cross-spec alignment packet report for issues #1–#16
+- `docs/KINFLOW_R2_MAPPING_HEALTH_RETRY_CLOSURE_REPORT.md` — Issue B/C/D closure packet (mapping completeness, health extension semantics, retry-window residency)
+- `docs/KINFLOW_ARCH_DECISION_ISSUE3_ADAPTER_RESULTS_VS_DELIVERY_ATTEMPTS_2026-03-24.md` — authoritative Issue #3 architecture decision (single-store persistence model)
+- `docs/KINFLOW_SPEC_BASELINE_DECLARATION_POST_ISSUE3_2026-03-24.md` — post-Issue #3 re-baseline declaration for P2-B continuation gate
+- `specs/KINFLOW_CONTRACT_FREEZE_MANIFEST_PHASE0_5.md` — Phase 0.5 canonical freeze manifest (pinned versions + hashes + change-control)
+- `docs/KINFLOW_R5_RECIPROCAL_PIN_MODEL_CORRECTION_REPORT.md` — reciprocal freeze↔checklist hash-cycle correction to one-way authoritative pin model
 
 ---
 
 ## Verification
 
 Run from project root:
-bash
-python3 -m compileall -q src tests && echo LINT_PASS_NORMALIZED
+```bash
+python3 -m compileall -q src scripts tests && echo LINT_PASS_NORMALIZED
 PYTHONPATH=src python3 -m unittest discover -s tests -p 'test_*.py' -v
+PYTHONPATH=src python3 -m unittest -v tests.test_p1a_schema_migrations
+```
 Expected:
 - `LINT_PASS_NORMALIZED`
 - `Ran 9 tests ...`
 - `OK`
+
+## Operator Scripts (copy/paste)
+
+Run from project root:
+```bash
+PYTHONPATH=src python3 scripts/operator_smoke.py
+PYTHONPATH=src python3 scripts/operator_create.py
+PYTHONPATH=src python3 scripts/operator_update.py
+PYTHONPATH=src python3 scripts/operator_cancel.py
+```
+
+Script purposes:
+- `scripts/operator_smoke.py` — one-pass create + delivery + brief/hash sanity check.
+- `scripts/operator_create.py` — deterministic create flow and due reminder delivery output.
+- `scripts/operator_update.py` — create then explicit update flow with regeneration-aware delivery output.
+- `scripts/operator_cancel.py` — create then cancel flow showing cancellation state and post-cancel delivery output.
 
 ---
 
