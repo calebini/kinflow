@@ -3,18 +3,18 @@
 instruction_id: KINFLOW-PHASE5-REGATE-STRICT-CI-EVIDENCE-20260326-001  
 run_code: 4368  
 status: canonical  
-report_timestamp_utc: 2026-03-26T20:31:00Z  
-evidence_root: `/home/agent/projects/_backlog/output/kinflow_phase5_regate_4368_20260326T202732Z/`
+report_timestamp_utc: 2026-03-27T08:31:00Z  
+evidence_root: `/home/agent/projects/_backlog/output/kinflow_phase5_regate_4368_20260327T082731Z/`
 
 ## 1) Baseline lineage lock
 
-Required remediation lineage anchors:
+Required lineage anchors:
 - `6c30126`
 - `eff3fa0`
 - `1dcc0dd`
 
 Verification:
-- `git merge-base --is-ancestor <commit> HEAD` for each anchor
+- `git merge-base --is-ancestor <anchor> HEAD` for each anchor.
 
 Result: **PASS**  
 Evidence: `00_baseline_lineage_check.txt`
@@ -26,77 +26,66 @@ Allowed continuation states: `LINT_PASS` or `LINT_PASS_NORMALIZED`.
 Result: **LINT_PASS**  
 Evidence: `01_lint_preflight.txt`
 
-## 3) Strict CI evidence (GitHub authoritative)
+## 3) Strict CI evidence collection (GitHub authoritative)
 
-Latest 5 `Kinflow CI` runs collected with run_id/branch/commit and job statuses:
-- Raw list: `02_ci_runs_latest5.json`
-- Enriched per-run details: `03_ci_runs_latest5_enriched.json`
-- Ledger CSV: `04_ci_run_ledger_latest5.csv`
-- Ledger table (markdown): `04b_ci_run_ledger_latest5.md`
-- Per-run detail snapshots:
-  - `run_23611842410_detail.json`
-  - `run_23611840726_detail.json`
-  - `run_23611753562_detail.json`
-  - `run_23611751510_detail.json`
-  - `run_23611678681_detail.json`
+Collected latest 5 `Kinflow CI` runs and bound each to branch + commit + job statuses:
+- `02_ci_runs_latest5.json`
+- `03_ci_runs_latest5_enriched.json`
+- `04_ci_run_ledger_latest5.csv`
+- `04b_ci_run_ledger_latest5.md`
+- `run_<id>_detail.json` for each run
 
 ### CI run ledger (latest 5)
 
 | run_id | branch | commit_sha | lint | test | contracts | verdict |
 |---:|---|---|---|---|---|---|
-| 23611842410 | ctx002-first-slice | 1dcc0dd777b1 | success | success | success | GREEN |
-| 23611840726 | ctx002-first-slice | 1dcc0dd777b1 | success | success | success | GREEN |
-| 23611753562 | ctx002-first-slice | eff3fa0ae328 | success | success | success | GREEN |
-| 23611751510 | ctx002-first-slice | eff3fa0ae328 | success | success | success | GREEN |
-| 23611678681 | ctx002-first-slice | 6c301262e9ef | success | failure | failure | NOT_GREEN |
+| 23624929622 | ctx002-first-slice | 6b850ec8bd31 | success | success | success | GREEN |
+| 23624929106 | ctx002-first-slice | 6b850ec8bd31 | success | success | success | GREEN |
+| 23622710334 | main | 4c8095d073f3 | success | success | success | GREEN |
+| 23622690810 | ci-greenpath-4369 | a20f58aabab5 | success | success | success | GREEN |
+| 23622600744 | ci-greenpath-4369 | 7f7d630e0f32 | success | success | success | GREEN |
 
-## 4) Protected-branch (main) required-check binding verdict
+## 4) Protected-branch required-check verification
 
-Protected branch discovery:
-- branch: `main`
-- HEAD commit: `2e8afffcb1c6e050b9663eaa38098334447398c7`
+Protected branch: `main`
 
 Evidence:
-- branch info: `05_main_branch.json`
-- branch protection readback: `06_main_branch_protection.json`
-- check-runs on HEAD: `07_main_head_check_runs.json`
-- status contexts on HEAD: `08_main_head_status_contexts.json`
-- strict verdict synthesis: `09_main_head_required_checks_verdict.json`
+- branch snapshot: `05_main_branch.json`
+- protection readback: `06_main_branch_protection.json`
+- head check-runs: `07_main_head_check_runs.json`
+- head statuses: `08_main_head_status_contexts.json`
+- synthesized strict verdict: `09_main_head_required_checks_verdict.json`
 
-Required-check enforcement verification:
-- Configured contexts exactly match required list: **YES**
+Required-check enforcement validation:
+- required contexts exact match: **YES**
   - `Kinflow CI / lint`
   - `Kinflow CI / test`
   - `Kinflow CI / contracts`
 - strict mode enabled: **YES**
 
-HEAD_COMMIT_SHA: `2e8afffcb1c6e050b9663eaa38098334447398c7`  
-REQUIRED_CHECKS_ALL_GREEN: **NO**
+HEAD_COMMIT_SHA: `4c8095d073f39715b047ed5fba8874f743ca2561`  
+REQUIRED_CHECKS_ALL_GREEN: **YES**
 
-Reason:
-- For protected-branch HEAD commit, required contexts are currently missing in authoritative check/status APIs (`missing`, not green).
+## 5) Prior migration evidence linkage (4366)
 
-## 5) Migration evidence linkage (from 4366)
-
-No migration re-run was required for this packet.
+No migration re-run required for this packet.
 
 Linked prior evidence:
-- 4366 evidence root: `/home/agent/projects/_backlog/output/kinflow_phase5_hardening_4366_20260326T173849Z/`
-- prior migration rehearsal matrix: `09_migration_rehearsal_matrix.md`
-- prior aggregate migration verdict: `migration_matrix.json` (`all_pass=true`)
+- `/home/agent/projects/_backlog/output/kinflow_phase5_hardening_4366_20260326T173849Z/09_migration_rehearsal_matrix.md`
+- `/home/agent/projects/_backlog/output/kinflow_phase5_hardening_4366_20260326T173849Z/migration_matrix.json`
+
+Linkage evidence: `10_prior_migration_linkage.txt`
 
 ## 6) Re-gate decision
 
 Gate rule: `PHASE5_HARDENING_GATE = GO` only if required checks are green for protected-branch HEAD commit.
 
-Observed protected-branch HEAD required checks: **NOT ALL GREEN** (missing).
+Observed protected-branch HEAD required checks: **ALL GREEN**.
 
-Per packet contract, fail-stop code applies: `PHASE5_REGATE_CI_RED_REQUIRED_CHECKS`.
-
-PHASE5_HARDENING_GATE: NO_GO  
-BLOCKERS: 1  
-RESIDUAL_RISKS: 1  
-READY_FOR_PHASE5_5_OR_6: NO
+PHASE5_HARDENING_GATE: GO  
+BLOCKERS: 0  
+RESIDUAL_RISKS: 0  
+READY_FOR_PHASE5_5_OR_6: YES
 
 ## 7) Rollback path
 
