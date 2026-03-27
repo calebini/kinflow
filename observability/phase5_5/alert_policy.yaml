@@ -1,0 +1,31 @@
+phase: "5.5"
+name: "Kinflow observability minimum"
+lookback_window_minutes: 60
+alerts:
+  - signal_id: duplicate_replay_send_anomaly
+    severity: high
+    threshold: "replay_anomaly_count >= 1"
+    clear_condition: "replay_anomaly_count == 0"
+    runbook: "docs/KINFLOW_OPERATOR_RUNBOOK_PHASE4.md#incident-response-flow"
+    false_positive_guard: "Ignore rows where source_adapter_attempt_id is null or equals attempt_id."
+
+  - signal_id: retry_exhaustion
+    severity: high
+    threshold: "retry_exhaustion_count >= 1"
+    clear_condition: "retry_exhaustion_count == 0"
+    runbook: "docs/KINFLOW_OPERATOR_RUNBOOK_PHASE4.md#incident-response-flow"
+    false_positive_guard: "Do not alert on transient-only failures without FAILED_RETRY_EXHAUSTED."
+
+  - signal_id: blocked_outcomes
+    severity: medium
+    threshold: "blocked_outcomes_count >= 3"
+    clear_condition: "blocked_outcomes_count < 3"
+    runbook: "docs/KINFLOW_OPERATOR_RUNBOOK_PHASE4.md#incident-response-flow"
+    false_positive_guard: "Use reason-code breakdown to distinguish policy expected blocks from regressions."
+
+  - signal_id: ci_protection_drift
+    severity: critical
+    threshold: "strict_mode != true OR contexts_exact_match != true OR required_approvals < 1"
+    clear_condition: "strict_mode == true AND contexts_exact_match == true AND required_approvals >= 1"
+    runbook: "docs/KINFLOW_PHASE5_CI_ENFORCEMENT_REMEDIATION_REPORT.md"
+    false_positive_guard: "Evaluate against authoritative GitHub branch-protection readback for main only."
