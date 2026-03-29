@@ -137,6 +137,18 @@ class DispatchRunnerIntegrationV053Tests(unittest.TestCase):
             self.assertEqual(result["status"], "NO_GO")
             self.assertEqual(result["error"], "RENDER_REGISTRY_GATE_UNAVAILABLE")
 
+    def test_db_reason_code_gate_passes_after_bootstrap(self) -> None:
+        tick = _load_dispatch_runner_module()
+
+        with tempfile.TemporaryDirectory() as td:
+            db_path = Path(td) / "runtime.sqlite"
+            conn = bootstrap_database(str(db_path))
+            conn.close()
+
+            ok, error = tick._db_reason_code_gate(db_path=str(db_path))
+            self.assertTrue(ok)
+            self.assertIsNone(error)
+
     def test_fallback_audit_marker_emitted_and_delivery_lifecycle_unchanged(self) -> None:
         tick = _load_dispatch_runner_module()
 
@@ -148,7 +160,7 @@ class DispatchRunnerIntegrationV053Tests(unittest.TestCase):
             conn = sqlite3.connect(db_path)
             now = "2026-03-29T15:30:00+00:00"
             conn.execute(
-                "INSERT INTO enum_reason_codes(code,class,active,version_tag) VALUES (?,?,?,?)",
+                "INSERT OR IGNORE INTO enum_reason_codes(code,class,active,version_tag) VALUES (?,?,?,?)",
                 ("RENDER_FALLBACK_USED", "runtime", 1, "v0.5.3"),
             )
             conn.execute(

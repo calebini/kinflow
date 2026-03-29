@@ -4,16 +4,16 @@ installed_by_instruction_id: KINFLOW-R1-REASONCODE-AUDIT-CLOSURE-20260324-001
 run_code: 4353
 installed_utc: 2026-03-24T23:00:00Z
 status: canonical
-version: v1.0.3
+version: v1.0.4
 ---
 
-KINFLOW_REASON_CODES_CANONICAL.md (Master Cut v1.0.3)
+KINFLOW_REASON_CODES_CANONICAL.md (Master Cut v1.0.4)
 # KINFLOW_REASON_CODES_CANONICAL.md
 
-version: v1.0.3
+version: v1.0.4
 status: canonical
 owner: kinflow
-last_updated_utc: 2026-03-24T23:00:00Z
+last_updated_utc: 2026-03-29T17:50:00Z
 
 ## Purpose
 Canonical reason-code registry for Kinflow runtime, adapter, persistence, and audit surfaces.
@@ -192,6 +192,13 @@ Each code includes:
 - terminal_default: false
 - resumable: true
 - resumable_via: explicit regeneration/retry trigger after mode change
+
+- RENDER_FALLBACK_USED
+- class: runtime
+- retry_eligible_default: false
+- terminal_default: false
+- resumable: false
+- resumable_via: none
 
 ### Lifecycle / Mutation
 
@@ -451,6 +458,13 @@ reason_codes:
     terminal_default: false
     resumable: true
     resumable_via: explicit regeneration/retry trigger after mode change
+
+  - code: RENDER_FALLBACK_USED
+    class: runtime
+    retry_eligible_default: false
+    terminal_default: false
+    resumable: false
+    resumable_via: none
 
   - code: UPDATED_REGENERATED
     class: mutation
