@@ -91,6 +91,10 @@ Core references:
 
 - `specs/KINFLOW_REASON_CODES_CANONICAL.md`
 
+## Canonical Notification Rendering Minimum Spec
+
+- `specs/KINFLOW_NOTIFICATION_RENDERING_MIN_SPEC_v0.5.3.md`
+
 ## Key Behaviors
 ### Idempotency
 Same intent fingerprint + same state resolves to same terminal mutation.
