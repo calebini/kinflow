@@ -91,6 +91,10 @@ Core references:
 
 - `specs/KINFLOW_REASON_CODES_CANONICAL.md`
 
+## Canonical Notification Rendering Minimum Spec
+
+- `specs/KINFLOW_NOTIFICATION_RENDERING_MIN_SPEC_v0.5.3.md`
+
 ## Key Behaviors
 ### Idempotency
 Same intent fingerprint + same state resolves to same terminal mutation.
@@ -173,6 +177,7 @@ Every lifecycle step emits append-only, correlated audit events with reason code
 - `observability/phase5_5/alert_policy.yaml` — threshold/severity/runbook mapping for observability minimum
 - `scripts/phase5_5_observability_probe.py` — deterministic trigger/clear probe for all required signals
 - `docs/KINFLOW_PHASE6_CANARY_KICKOFF_REPORT.md` — Phase 6 bounded canary kickoff report with rollback-trigger verdicts
+- `docs/KINFLOW_USER_RUNBOOK_MASTER.md` — canonical user/operator runbook (practical usage quick-start and guardrails)
 - `observability/phase6/canary_policy.yaml` — canary envelope + rollback threshold policy
 - `scripts/phase6_canary_kickoff.py` — deterministic canary runner (readiness, snapshots, trigger evaluation, final verdict)
 - `docs/KINFLOW_OPERATOR_RUNBOOK_PHASE4.md` — operator startup/restart/incident runbook (Phase 4)
