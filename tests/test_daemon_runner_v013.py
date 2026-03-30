@@ -150,6 +150,67 @@ class DaemonRunnerV013Tests(unittest.TestCase):
                 self.assertIn(field, row)
             guard.release()
 
+    def test_dispatch_noop_wiring_guard_detects_incomplete(self) -> None:
+        from scripts.daemon_run import RunnerExit, ensure_dispatch_path_wired
+
+        with self.assertRaises(RunnerExit) as ctx:
+            ensure_dispatch_path_wired(None)
+        self.assertEqual(ctx.exception.fail_token, "DISPATCH_PATH_WIRING_INCOMPLETE")
+
+    def test_overdue_reminder_processed_and_persisted(self) -> None:
+        from scripts.daemon_run import DispatchCallbacks
+        from src.ctx002_v0.models import DeliveryTarget, Event, Reminder
+        from src.ctx002_v0.persistence.store import SqliteStateStore
+
+        with tempfile.TemporaryDirectory() as td:
+            db = Path(td) / "runtime.sqlite"
+            store = SqliteStateStore.from_path(str(db))
+            store.save_delivery_target(
+                DeliveryTarget(
+                    person_id="p1",
+                    channel="discord",
+                    target_id="u1",
+                    timezone="UTC",
+                )
+            )
+            event = Event(
+                event_id="evt-1",
+                version=1,
+                title="test",
+                start_at_local=datetime.now(UTC) + timedelta(hours=1),
+                timezone="UTC",
+                participants=("p1",),
+                audience=("p1",),
+                reminder_offset_minutes=5,
+                source_message_ref="msg-1",
+            )
+            store.save_new_event(event)
+
+            reminder = Reminder(
+                reminder_id="rem-1",
+                dedupe_key="k1",
+                event_id="evt-1",
+                event_version=1,
+                recipient_id="p1",
+                trigger_at_utc=datetime.now(UTC) - timedelta(minutes=1),
+                offset_minutes=5,
+                status="scheduled",
+            )
+            store.save_reminder(reminder)
+
+            cb = DispatchCallbacks(store, lambda _e: None)
+            rows = cb.list_candidates()
+            self.assertGreaterEqual(len(rows), 1)
+            ok = cb.process_candidate(rows[0])
+            self.assertTrue(ok)
+
+            reminders = store.list_reminders()
+            self.assertEqual(reminders[0].status, "delivered")
+            attempts = store.conn.execute("SELECT COUNT(*) AS n FROM delivery_attempts").fetchone()["n"]
+            audit = store.conn.execute("SELECT COUNT(*) AS n FROM audit_log WHERE stage='delivery'").fetchone()["n"]
+            self.assertGreaterEqual(attempts, 1)
+            self.assertGreaterEqual(audit, 1)
+
     def test_terminal_json_line_and_startup_order(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)

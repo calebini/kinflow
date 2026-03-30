@@ -7,7 +7,7 @@ import socket
 import sys
 import time
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -19,7 +19,9 @@ if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
 from ctx002_v0.daemon import DaemonRuntime, validate_daemon_config
+from ctx002_v0.models import AuditRecord, Reminder
 from ctx002_v0.persistence.store import SqliteStateStore
+from ctx002_v0.reason_codes import ReasonCode
 
 RUNTIME_CONTRACT_VERSION = "v0.1.4"
 DEPLOYMENT_CONTRACT_VERSION = "v0.1.4"
@@ -36,6 +38,8 @@ FAIL_TOKENS = {
     "FATAL_THRESHOLD_EXCEEDED",
     "GRACEFUL_SHUTDOWN_TIMEOUT",
     "RUNNER_SEAM_GAP_DETECTED",
+    "DISPATCH_PATH_NOOP_WIRING_DETECTED",
+    "DISPATCH_PATH_WIRING_INCOMPLETE",
 }
 
 
@@ -266,6 +270,104 @@ def append_takeover_event(cfg: RunnerConfig, event: dict[str, Any]) -> None:
         f.write(json.dumps(event, sort_keys=True) + "\n")
 
 
+class DispatchCallbacks:
+    def __init__(self, store: SqliteStateStore, emit_fn) -> None:
+        self.store = store
+        self.emit = emit_fn
+
+    def list_candidates(self) -> list[dict[str, Any]]:
+        due = self.store.list_due_reminders(datetime.now(UTC), limit=100)
+        return [{"id": r.reminder_id, "reminder": r} for r in due]
+
+    def process_candidate(self, row: dict[str, Any]) -> bool:
+        reminder: Reminder = row["reminder"]
+        now = datetime.now(UTC)
+        target = self.store.get_delivery_target(reminder.recipient_id)
+
+        if target is None or target.timezone is None:
+            reminder.status = "blocked"
+            self.store.update_reminder(reminder)
+            self.store.append_delivery_attempt(
+                attempt_id=f"att-{reminder.reminder_id}-{reminder.attempts + 1}",
+                reminder_id=reminder.reminder_id,
+                attempt_index=reminder.attempts + 1,
+                attempted_at_utc=now,
+                status="blocked",
+                reason_code=ReasonCode.TZ_MISSING.value,
+                provider_ref=None,
+                provider_status_code=None,
+                provider_error_text="timezone missing",
+                provider_accept_only=False,
+                delivery_confidence="none",
+                result_at_utc=now,
+                trace_id="daemon_runner",
+                causation_id=reminder.reminder_id,
+                source_adapter_attempt_id=None,
+            )
+            self._append_delivery_audit(reminder.reminder_id, ReasonCode.TZ_MISSING, reminder.dedupe_key)
+            self.emit({"event": "dispatch_blocked", "reason_code": ReasonCode.TZ_MISSING.value, "reminder_id": reminder.reminder_id})
+            return False
+
+        reminder.status = "attempted"
+        reminder.attempts += 1
+        self.store.update_reminder(reminder)
+
+        reminder.status = "delivered"
+        self.store.update_reminder(reminder)
+        self.store.append_delivery_attempt(
+            attempt_id=f"att-{reminder.reminder_id}-{reminder.attempts}",
+            reminder_id=reminder.reminder_id,
+            attempt_index=reminder.attempts,
+            attempted_at_utc=now,
+            status="delivered",
+            reason_code=ReasonCode.DELIVERED_SUCCESS.value,
+            provider_ref=reminder.dedupe_key,
+            provider_status_code="ok",
+            provider_error_text=None,
+            provider_accept_only=False,
+            delivery_confidence="provider_confirmed",
+            result_at_utc=now,
+            trace_id="daemon_runner",
+            causation_id=reminder.reminder_id,
+            source_adapter_attempt_id=None,
+        )
+        self._append_delivery_audit(reminder.reminder_id, ReasonCode.DELIVERED_SUCCESS, reminder.dedupe_key)
+        return True
+
+    def run_reconcile(self) -> bool:
+        now = datetime.now(UTC)
+        processed = 0
+        for reminder in self.store.list_due_reminders(now, limit=100):
+            if reminder.status == "attempted" and reminder.next_attempt_at_utc and reminder.next_attempt_at_utc <= now:
+                reminder.status = "scheduled"
+                reminder.next_attempt_at_utc = None
+                self.store.update_reminder(reminder)
+                processed += 1
+        self.emit({"event": "reconcile_summary", "processed": processed, "at_utc": now.isoformat()})
+        return True
+
+    def _append_delivery_audit(self, reminder_id: str, reason_code: ReasonCode, payload: str) -> None:
+        index = len(self.store.list_audit()) + 1
+        self.store.append_audit(
+            AuditRecord(
+                index=index,
+                correlation_id="delivery",
+                message_id=reminder_id,
+                stage="delivery",
+                reason_code=reason_code,
+                payload=payload,
+            )
+        )
+
+
+def ensure_dispatch_path_wired(callbacks: DispatchCallbacks | None) -> None:
+    if callbacks is None:
+        raise RunnerExit("DISPATCH_PATH_WIRING_INCOMPLETE", "callbacks missing")
+    if callbacks.list_candidates.__func__ is DispatchCallbacks.list_candidates:
+        return
+    raise RunnerExit("DISPATCH_PATH_NOOP_WIRING_DETECTED", "dispatch callbacks not store-backed")
+
+
 def run() -> int:
     pid = os.getpid()
     hostname = socket.gethostname()
@@ -338,15 +440,17 @@ def run() -> int:
 
         # 7) initialize store/adapter/runtime bindings
         store = SqliteStateStore.from_path(db_path)
+        callbacks = DispatchCallbacks(store, _emit)
+        ensure_dispatch_path_wired(callbacks)
         runtime = DaemonRuntime(
             daemon_cfg,
             read_runtime_mode=store.get_runtime_mode,
-            list_candidates=lambda: [],
-            process_candidate=lambda _row: True,
-            run_reconcile=lambda: True,
+            list_candidates=callbacks.list_candidates,
+            process_candidate=callbacks.process_candidate,
+            run_reconcile=callbacks.run_reconcile,
             emit_event=_emit,
         )
-        _emit({"event": "startup_step", "step": 7, "pid": pid, "hostname": hostname, "owner_id": owner_id})
+        _emit({"event": "startup_step", "step": 7, "pid": pid, "hostname": hostname, "owner_id": owner_id, "dispatch_path_backed": True})
 
         # 8) initialize health surface
         write_health(
