@@ -87,6 +87,10 @@ Core references:
 
 - `specs/KINFLOW_DAEMON_DEPLOYMENT_CONTRACT_MASTER_v0.1.4.md`
 
+## Canonical Daemon Runner Implementation Spec
+
+- `specs/KINFLOW_DAEMON_RUNNER_IMPLEMENTATION_SPEC_MASTER_v0.1.3.md`
+
 ## Canonical OpenClaw Adapter Implementation Spec
 
 - `specs/KINFLOW_OC_ADAPTER_IMPLEMENTATION_SPEC_MASTER_v0.2.4.md` (content version: v0.2.5)
