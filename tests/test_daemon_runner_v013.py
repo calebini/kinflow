@@ -13,6 +13,25 @@ ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "scripts" / "daemon_run.py"
 
 
+def _validated_runner_subprocess_context(root: Path) -> tuple[list[str], dict[str, str], str]:
+    resolved_root = root.resolve()
+    resolved_script = SCRIPT.resolve()
+    python_exec = str(Path(sys.executable).resolve()) if sys.executable else ""
+
+    if not python_exec:
+        raise AssertionError("python executable path is empty")
+    if not Path(python_exec).exists():
+        raise AssertionError(f"python executable missing: {python_exec}")
+    if not resolved_root.exists() or not resolved_root.is_dir():
+        raise AssertionError(f"invalid cwd for subprocess: {resolved_root}")
+    if not resolved_script.exists():
+        raise AssertionError(f"runner script missing: {resolved_script}")
+
+    env = os.environ.copy()
+    env["PYTHONPATH"] = str((resolved_root / "src").resolve())
+    return [python_exec, str(resolved_script)], env, str(resolved_root)
+
+
 class DaemonRunnerV013Tests(unittest.TestCase):
     def test_version_binding_validation_fails_mismatch(self) -> None:
         from scripts.daemon_run import RunnerExit, load_runner_config, validate_version_bindings
@@ -212,22 +231,34 @@ class DaemonRunnerV013Tests(unittest.TestCase):
             self.assertGreaterEqual(audit, 1)
 
     def test_terminal_json_line_and_startup_order(self) -> None:
-        with tempfile.TemporaryDirectory() as td:
-            root = Path(td)
-            env = os.environ.copy()
+        with tempfile.TemporaryDirectory(prefix="kinflow-runner-test-") as td:
+            root = Path(td).resolve()
+            cmd, env, cwd = _validated_runner_subprocess_context(ROOT)
             env.update(
                 {
-                    "KINFLOW_DB_PATH": str(root / "runtime.sqlite"),
-                    "KINFLOW_HEALTH_PATH": str(root / "health.json"),
-                    "KINFLOW_STATE_STAMP_PATH": str(root / "dispatch_mode.state"),
-                    "KINFLOW_LOCK_PATH": str(root / "daemon.lock"),
-                    "KINFLOW_OWNER_META_PATH": str(root / "owner.json"),
+                    "KINFLOW_DB_PATH": str((root / "runtime.sqlite").resolve()),
+                    "KINFLOW_HEALTH_PATH": str((root / "health.json").resolve()),
+                    "KINFLOW_STATE_STAMP_PATH": str((root / "dispatch_mode.state").resolve()),
+                    "KINFLOW_LOCK_PATH": str((root / "daemon.lock").resolve()),
+                    "KINFLOW_OWNER_META_PATH": str((root / "owner.json").resolve()),
                     "KINFLOW_DAEMON_TICK_MS": "1000",
                 }
             )
+
+            required_non_empty = [
+                "KINFLOW_DB_PATH",
+                "KINFLOW_HEALTH_PATH",
+                "KINFLOW_STATE_STAMP_PATH",
+                "KINFLOW_LOCK_PATH",
+                "KINFLOW_OWNER_META_PATH",
+            ]
+            for key in required_non_empty:
+                self.assertTrue(env.get(key), f"env path missing: {key}")
+                self.assertNotEqual(env[key].strip(), "", f"env path empty: {key}")
+
             proc = subprocess.Popen(
-                [sys.executable, str(SCRIPT)],
-                cwd=str(ROOT),
+                cmd,
+                cwd=cwd,
                 env=env,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
