@@ -75,6 +75,10 @@ Core references:
 
 - `specs/KINFLOW_COMMS_ADAPTER_CONTRACT_MASTER_v0.1.7.md` (content version: v0.1.8)
 
+## Canonical Dispatcher↔OC Adapter Integration Addendum
+
+- `specs/KINFLOW_DISPATCHER_OC_ADAPTER_INTEGRATION_ADDENDUM_v0.1.7.md`
+
 ## Canonical Production Plan Checklist
 
 - `specs/KINFLOW_PRODUCTION_PLAN_CHECKLIST_MASTER.md`
