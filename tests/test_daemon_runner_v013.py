@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -16,12 +17,19 @@ SCRIPT = ROOT / "scripts" / "daemon_run.py"
 def _validated_runner_subprocess_context(root: Path) -> tuple[list[str], dict[str, str], str]:
     resolved_root = root.resolve()
     resolved_script = SCRIPT.resolve()
-    python_exec = str(Path(sys.executable).resolve()) if sys.executable else ""
+
+    python_exec = ""
+    if sys.executable:
+        candidate = str(Path(sys.executable).resolve())
+        if Path(candidate).exists():
+            python_exec = candidate
+    if not python_exec:
+        fallback = shutil.which("python3")
+        if fallback:
+            python_exec = fallback
 
     if not python_exec:
-        raise AssertionError("python executable path is empty")
-    if not Path(python_exec).exists():
-        raise AssertionError(f"python executable missing: {python_exec}")
+        raise AssertionError("no usable python executable found (sys.executable empty/unset and python3 not found)")
     if not resolved_root.exists() or not resolved_root.is_dir():
         raise AssertionError(f"invalid cwd for subprocess: {resolved_root}")
     if not resolved_script.exists():
