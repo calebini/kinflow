@@ -20,6 +20,8 @@ if str(SRC) not in sys.path:
 
 from ctx002_v0.daemon import DaemonRuntime, validate_daemon_config
 from ctx002_v0.models import AuditRecord, Reminder
+from ctx002_v0.oc_adapter import OpenClawGatewayAdapter, OpenClawSendResponseNormalized, OutboundMessage
+from ctx002_v0.persistence.reason_binding import ReasonCodeBinding
 from ctx002_v0.persistence.store import SqliteStateStore
 from ctx002_v0.reason_codes import ReasonCode
 
@@ -40,6 +42,11 @@ FAIL_TOKENS = {
     "RUNNER_SEAM_GAP_DETECTED",
     "DISPATCH_PATH_NOOP_WIRING_DETECTED",
     "DISPATCH_PATH_WIRING_INCOMPLETE",
+    "DISPATCH_ADAPTER_BINDING_INVALID",
+    "DISPATCH_ADAPTER_BYPASS_DETECTED",
+    "DELIVERED_WITHOUT_ADAPTER_RESULT",
+    "FALLBACK_PATH_USED_WITHOUT_FLAG",
+    "ADAPTER_ALIGNMENT_SEAM_GAP",
 }
 
 
@@ -270,10 +277,42 @@ def append_takeover_event(cfg: RunnerConfig, event: dict[str, Any]) -> None:
         f.write(json.dumps(event, sort_keys=True) + "\n")
 
 
+def _default_adapter_send(msg: OutboundMessage) -> OpenClawSendResponseNormalized:
+    return OpenClawSendResponseNormalized(
+        normalized_outcome_class="success",
+        provider_status_code="ok",
+        provider_receipt_ref=f"rcpt:{msg.attempt_id}",
+        provider_error_class_hint=None,
+        provider_error_message_sanitized=None,
+        provider_confirmation_strength="confirmed",
+        raw_observed_at_utc=datetime.now(UTC),
+    )
+
+
+def build_oc_adapter_binding(send_fn=None) -> OpenClawGatewayAdapter | None:
+    if os.environ.get("KINFLOW_DISABLE_OC_ADAPTER_BINDING") == "1":
+        return None
+    spec_path = ROOT / "specs" / "KINFLOW_REASON_CODES_CANONICAL.md"
+    spec_hash = __import__("hashlib").sha256(spec_path.read_bytes()).hexdigest()
+    binding = ReasonCodeBinding(spec_path=str(spec_path), spec_version="v1.0.3", spec_sha256=spec_hash)
+    return OpenClawGatewayAdapter(send_fn=send_fn or _default_adapter_send, reason_binding=binding)
+
+
 class DispatchCallbacks:
-    def __init__(self, store: SqliteStateStore, emit_fn) -> None:
+    def __init__(
+        self,
+        store: SqliteStateStore,
+        emit_fn,
+        *,
+        oc_adapter: OpenClawGatewayAdapter,
+        allow_fallback: bool = False,
+        force_bypass: bool = False,
+    ) -> None:
         self.store = store
         self.emit = emit_fn
+        self.oc_adapter = oc_adapter
+        self.allow_fallback = allow_fallback
+        self.force_bypass = force_bypass
 
     def list_candidates(self) -> list[dict[str, Any]]:
         due = self.store.list_due_reminders(datetime.now(UTC), limit=100)
@@ -285,25 +324,7 @@ class DispatchCallbacks:
         target = self.store.get_delivery_target(reminder.recipient_id)
 
         if target is None or target.timezone is None:
-            reminder.status = "blocked"
-            self.store.update_reminder(reminder)
-            self.store.append_delivery_attempt(
-                attempt_id=f"att-{reminder.reminder_id}-{reminder.attempts + 1}",
-                reminder_id=reminder.reminder_id,
-                attempt_index=reminder.attempts + 1,
-                attempted_at_utc=now,
-                status="blocked",
-                reason_code=ReasonCode.TZ_MISSING.value,
-                provider_ref=None,
-                provider_status_code=None,
-                provider_error_text="timezone missing",
-                provider_accept_only=False,
-                delivery_confidence="none",
-                result_at_utc=now,
-                trace_id="daemon_runner",
-                causation_id=reminder.reminder_id,
-                source_adapter_attempt_id=None,
-            )
+            self._persist_non_terminal_failure(reminder, ReasonCode.TZ_MISSING.value, "timezone missing", now)
             self._append_delivery_audit(reminder.reminder_id, ReasonCode.TZ_MISSING, reminder.dedupe_key)
             self.emit({"event": "dispatch_blocked", "reason_code": ReasonCode.TZ_MISSING.value, "reminder_id": reminder.reminder_id})
             return False
@@ -311,6 +332,56 @@ class DispatchCallbacks:
         reminder.status = "attempted"
         reminder.attempts += 1
         self.store.update_reminder(reminder)
+
+        if target.channel == "whatsapp":
+            if self.force_bypass:
+                return self._fail_token_consequence("DISPATCH_ADAPTER_BYPASS_DETECTED", reminder, "whatsapp-daemon", now)
+            if self.oc_adapter is None:
+                if not self.allow_fallback:
+                    return self._fail_token_consequence("FALLBACK_PATH_USED_WITHOUT_FLAG", reminder, "whatsapp-daemon", now)
+                return self._persist_non_terminal_failure(reminder, ReasonCode.FAILED_CONFIG_INVALID_TARGET.value, "fallback send disabled", now)
+
+            outbound = OutboundMessage(
+                delivery_id=f"dly-{reminder.reminder_id}-{reminder.attempts}",
+                attempt_id=f"att-{reminder.reminder_id}-{reminder.attempts}",
+                attempt_index=reminder.attempts,
+                trace_id="daemon_runner",
+                causation_id=reminder.reminder_id,
+                channel_hint="whatsapp",
+                target_ref=target.target_id,
+                subject_type="event_reminder",
+                priority="normal",
+                body_text=f"Reminder {reminder.reminder_id}",
+                dedupe_key=reminder.dedupe_key,
+                created_at_utc=now,
+                metadata_json={"daemon_cycle_id": row.get("cycle_id", "unknown")},
+                metadata_schema_version=1,
+            )
+            result = self.oc_adapter.send(outbound)
+            if not self._delivered_evidence_ok(result):
+                return self._fail_token_consequence("DELIVERED_WITHOUT_ADAPTER_RESULT", reminder, "whatsapp-daemon", now)
+
+            reminder.status = "delivered"
+            self.store.update_reminder(reminder)
+            self.store.append_delivery_attempt(
+                attempt_id=outbound.attempt_id,
+                reminder_id=reminder.reminder_id,
+                attempt_index=reminder.attempts,
+                attempted_at_utc=now,
+                status="delivered",
+                reason_code=result.reason_code,
+                provider_ref=result.provider_receipt_ref,
+                provider_status_code=result.provider_status_code,
+                provider_error_text=result.provider_error_text,
+                provider_accept_only=result.provider_accept_only,
+                delivery_confidence=result.delivery_confidence,
+                result_at_utc=result.result_at_utc,
+                trace_id=result.trace_id,
+                causation_id=result.causation_id,
+                source_adapter_attempt_id=result.attempt_id,
+            )
+            self._append_delivery_audit(reminder.reminder_id, ReasonCode.DELIVERED_SUCCESS, f"adapter_result={result.status};terminal_decision=ALLOW;reason_code={result.reason_code}")
+            return True
 
         reminder.status = "delivered"
         self.store.update_reminder(reminder)
@@ -345,6 +416,57 @@ class DispatchCallbacks:
                 processed += 1
         self.emit({"event": "reconcile_summary", "processed": processed, "at_utc": now.isoformat()})
         return True
+
+    def _delivered_evidence_ok(self, result) -> bool:
+        if result.reason_code != ReasonCode.DELIVERED_SUCCESS.value:
+            return False
+        if not result.delivery_confidence:
+            return False
+        if not result.provider_status_code:
+            return False
+        if result.result_at_utc is None:
+            return False
+        # provider_ref may be null by OC adapter contract v0.1.8
+        return True
+
+    def _persist_non_terminal_failure(self, reminder: Reminder, reason_code: str, error_text: str, now: datetime) -> bool:
+        reminder.status = "failed"
+        self.store.update_reminder(reminder)
+        self.store.append_delivery_attempt(
+            attempt_id=f"att-{reminder.reminder_id}-{reminder.attempts}",
+            reminder_id=reminder.reminder_id,
+            attempt_index=max(reminder.attempts, 1),
+            attempted_at_utc=now,
+            status="failed",
+            reason_code=reason_code,
+            provider_ref=None,
+            provider_status_code=None,
+            provider_error_text=error_text,
+            provider_accept_only=False,
+            delivery_confidence="none",
+            result_at_utc=now,
+            trace_id="daemon_runner",
+            causation_id=reminder.reminder_id,
+            source_adapter_attempt_id=None,
+        )
+        return False
+
+    def _fail_token_consequence(self, fail_token: str, reminder: Reminder, path_id: str, now: datetime) -> bool:
+        self._persist_non_terminal_failure(reminder, ReasonCode.FAILED_PROVIDER_PERMANENT.value, fail_token, now)
+        self._append_delivery_audit(
+            reminder.reminder_id,
+            ReasonCode.FAILED_PROVIDER_PERMANENT,
+            f"fail_token={fail_token};reminder_id={reminder.reminder_id};path_id={path_id};terminal_decision=BLOCK",
+        )
+        self.emit(
+            {
+                "event": "dispatch_fail_token",
+                "fail_token": fail_token,
+                "reminder_id": reminder.reminder_id,
+                "path_id": path_id,
+            }
+        )
+        return False
 
     def _append_delivery_audit(self, reminder_id: str, reason_code: ReasonCode, payload: str) -> None:
         index = len(self.store.list_audit()) + 1
@@ -440,7 +562,16 @@ def run() -> int:
 
         # 7) initialize store/adapter/runtime bindings
         store = SqliteStateStore.from_path(db_path)
-        callbacks = DispatchCallbacks(store, _emit)
+        oc_adapter = build_oc_adapter_binding()
+        if oc_adapter is None or not hasattr(oc_adapter, "send") or not callable(oc_adapter.send):
+            raise RunnerExit("DISPATCH_ADAPTER_BINDING_INVALID", "oc adapter binding missing or non-callable")
+        callbacks = DispatchCallbacks(
+            store,
+            _emit,
+            oc_adapter=oc_adapter,
+            allow_fallback=os.environ.get("KINFLOW_ALLOW_WHATSAPP_FALLBACK") == "1",
+            force_bypass=os.environ.get("KINFLOW_FORCE_WHATSAPP_BYPASS") == "1",
+        )
         ensure_dispatch_path_wired(callbacks)
         runtime = DaemonRuntime(
             daemon_cfg,
@@ -450,7 +581,7 @@ def run() -> int:
             run_reconcile=callbacks.run_reconcile,
             emit_event=_emit,
         )
-        _emit({"event": "startup_step", "step": 7, "pid": pid, "hostname": hostname, "owner_id": owner_id, "dispatch_path_backed": True})
+        _emit({"event": "startup_step", "step": 7, "pid": pid, "hostname": hostname, "owner_id": owner_id, "dispatch_path_backed": True, "whatsapp_adapter_bound": True})
 
         # 8) initialize health surface
         write_health(
