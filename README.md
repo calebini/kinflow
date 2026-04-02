@@ -78,6 +78,7 @@ Core references:
 ## Canonical Dispatcher↔OC Adapter Integration Addendum
 
 - `specs/KINFLOW_DISPATCHER_OC_ADAPTER_INTEGRATION_ADDENDUM_v0.1.7.md`
+- `specs/KINFLOW_DISPATCHER_OC_ADAPTER_INTEGRATION_ADDENDUM_v0.1.7b.md`
 
 ## Canonical Production Plan Checklist
 
