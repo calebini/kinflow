@@ -333,10 +333,20 @@ class DaemonRunnerV013Tests(unittest.TestCase):
             cb = DispatchCallbacks(store, lambda _e: None, oc_adapter=build_oc_adapter_binding(), force_bypass=True)
             ok = cb.process_candidate(cb.list_candidates()[0])
             self.assertFalse(ok)
+            attempt_row = store.conn.execute(
+                "SELECT status, reason_code FROM delivery_attempts ORDER BY rowid DESC LIMIT 1"
+            ).fetchone()
+            self.assertEqual(attempt_row["status"], "failed")
+            self.assertEqual(attempt_row["reason_code"], "FAILED_PROVIDER_PERMANENT")
+
             audit_payload = store.conn.execute(
                 "SELECT payload_json FROM audit_log ORDER BY audit_index DESC LIMIT 1"
             ).fetchone()["payload_json"]
-            self.assertIn("DISPATCH_ADAPTER_BYPASS_DETECTED", audit_payload)
+            self.assertIn("attempt_id=att-rem-w2-1", audit_payload)
+            self.assertIn("reminder_id=rem-w2", audit_payload)
+            self.assertIn("path_id=whatsapp-daemon", audit_payload)
+            self.assertIn("fail_token=DISPATCH_ADAPTER_BYPASS_DETECTED", audit_payload)
+            self.assertIn("terminal_decision=BLOCK", audit_payload)
 
     def test_pf05_startup_binding_gate_invalid(self) -> None:
         with tempfile.TemporaryDirectory(prefix="kinflow-runner-test-") as td:
@@ -357,6 +367,12 @@ class DaemonRunnerV013Tests(unittest.TestCase):
             out, _ = proc.communicate(timeout=3)
             self.assertNotEqual(proc.returncode, 0)
             self.assertIn("DISPATCH_ADAPTER_BINDING_INVALID", out)
+            lines = [json.loads(line) for line in out.splitlines() if line.strip().startswith("{")]
+            step7 = [r for r in lines if r.get("event") == "startup_step" and r.get("step") == 7]
+            self.assertTrue(step7)
+            self.assertFalse(step7[0].get("whatsapp_adapter_bound"))
+            startup_steps = [r["step"] for r in lines if r.get("event") == "startup_step"]
+            self.assertNotIn(10, startup_steps)
 
     def test_terminal_json_line_and_startup_order(self) -> None:
         with tempfile.TemporaryDirectory(prefix="kinflow-runner-test-") as td:
@@ -405,6 +421,8 @@ class DaemonRunnerV013Tests(unittest.TestCase):
             lines = [json.loads(line) for line in out.splitlines() if line.strip().startswith("{")]
             startup_steps = [r["step"] for r in lines if r.get("event") == "startup_step"]
             self.assertEqual(startup_steps, list(range(1, 11)))
+            step7 = [r for r in lines if r.get("event") == "startup_step" and r.get("step") == 7][0]
+            self.assertTrue(step7.get("whatsapp_adapter_bound"))
             terminal = lines[-1]
             self.assertEqual(terminal.get("event"), "terminal")
             self.assertIn("final_status", terminal)

@@ -298,6 +298,13 @@ def build_oc_adapter_binding(send_fn=None) -> OpenClawGatewayAdapter | None:
     return OpenClawGatewayAdapter(send_fn=send_fn or _default_adapter_send, reason_binding=binding)
 
 
+FAIL_TOKEN_REASON_CODE_MAP = {
+    "DISPATCH_ADAPTER_BYPASS_DETECTED": ReasonCode.FAILED_PROVIDER_PERMANENT.value,
+    "DELIVERED_WITHOUT_ADAPTER_RESULT": ReasonCode.FAILED_PROVIDER_PERMANENT.value,
+    "FALLBACK_PATH_USED_WITHOUT_FLAG": ReasonCode.FAILED_PROVIDER_PERMANENT.value,
+}
+
+
 class DispatchCallbacks:
     def __init__(
         self,
@@ -429,11 +436,20 @@ class DispatchCallbacks:
         # provider_ref may be null by OC adapter contract v0.1.8
         return True
 
-    def _persist_non_terminal_failure(self, reminder: Reminder, reason_code: str, error_text: str, now: datetime) -> bool:
+    def _persist_non_terminal_failure(
+        self,
+        reminder: Reminder,
+        reason_code: str,
+        error_text: str,
+        now: datetime,
+        *,
+        attempt_id: str | None = None,
+    ) -> bool:
         reminder.status = "failed"
         self.store.update_reminder(reminder)
+        effective_attempt_id = attempt_id or f"att-{reminder.reminder_id}-{max(reminder.attempts, 1)}"
         self.store.append_delivery_attempt(
-            attempt_id=f"att-{reminder.reminder_id}-{reminder.attempts}",
+            attempt_id=effective_attempt_id,
             reminder_id=reminder.reminder_id,
             attempt_index=max(reminder.attempts, 1),
             attempted_at_utc=now,
@@ -452,18 +468,32 @@ class DispatchCallbacks:
         return False
 
     def _fail_token_consequence(self, fail_token: str, reminder: Reminder, path_id: str, now: datetime) -> bool:
-        self._persist_non_terminal_failure(reminder, ReasonCode.FAILED_PROVIDER_PERMANENT.value, fail_token, now)
+        attempt_id = f"att-{reminder.reminder_id}-{max(reminder.attempts, 1)}"
+        mapped_reason_code = FAIL_TOKEN_REASON_CODE_MAP.get(fail_token)
+        if mapped_reason_code is None:
+            raise RunnerExit("ADAPTER_ALIGNMENT_SEAM_GAP", f"missing fail-token mapping: {fail_token}")
+
+        self._persist_non_terminal_failure(
+            reminder,
+            mapped_reason_code,
+            fail_token,
+            now,
+            attempt_id=attempt_id,
+        )
         self._append_delivery_audit(
             reminder.reminder_id,
-            ReasonCode.FAILED_PROVIDER_PERMANENT,
-            f"fail_token={fail_token};reminder_id={reminder.reminder_id};path_id={path_id};terminal_decision=BLOCK",
+            ReasonCode(mapped_reason_code),
+            f"attempt_id={attempt_id};reminder_id={reminder.reminder_id};path_id={path_id};fail_token={fail_token};terminal_decision=BLOCK",
         )
         self.emit(
             {
                 "event": "dispatch_fail_token",
+                "attempt_id": attempt_id,
                 "fail_token": fail_token,
+                "mapped_reason_code": mapped_reason_code,
                 "reminder_id": reminder.reminder_id,
                 "path_id": path_id,
+                "terminal_decision": "BLOCK",
             }
         )
         return False
@@ -563,7 +593,19 @@ def run() -> int:
         # 7) initialize store/adapter/runtime bindings
         store = SqliteStateStore.from_path(db_path)
         oc_adapter = build_oc_adapter_binding()
-        if oc_adapter is None or not hasattr(oc_adapter, "send") or not callable(oc_adapter.send):
+        adapter_bound = bool(oc_adapter is not None and hasattr(oc_adapter, "send") and callable(getattr(oc_adapter, "send", None)))
+        if not adapter_bound:
+            _emit(
+                {
+                    "event": "startup_step",
+                    "step": 7,
+                    "pid": pid,
+                    "hostname": hostname,
+                    "owner_id": owner_id,
+                    "dispatch_path_backed": True,
+                    "whatsapp_adapter_bound": False,
+                }
+            )
             raise RunnerExit("DISPATCH_ADAPTER_BINDING_INVALID", "oc adapter binding missing or non-callable")
         callbacks = DispatchCallbacks(
             store,
