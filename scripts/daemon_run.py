@@ -425,19 +425,23 @@ class DispatchCallbacks:
         return True
 
     @staticmethod
-    def _provider_ref_transport_meaningful(provider_ref: str | None) -> bool:
+    def _classify_send_evidence_ref(provider_ref: str | None) -> str:
         if provider_ref is None:
-            return False
+            return "local_non_verifiable"
         token = provider_ref.strip()
         if not token:
-            return False
+            return "local_non_verifiable"
         lowered = token.lower()
         blocked = {"none", "null", "n/a", "na", "placeholder", "synthetic"}
         if lowered in blocked:
-            return False
+            return "local_non_verifiable"
         if lowered.startswith("att-") or lowered.startswith("rcpt:att-") or lowered.startswith("local:"):
-            return False
-        return True
+            return "local_non_verifiable"
+        return "transport_verifiable"
+
+    @staticmethod
+    def _provider_ref_transport_meaningful(provider_ref: str | None) -> bool:
+        return DispatchCallbacks._classify_send_evidence_ref(provider_ref) == "transport_verifiable"
 
     def _delivered_evidence_ok(self, result) -> bool:
         if result.reason_code != ReasonCode.DELIVERED_SUCCESS.value:
