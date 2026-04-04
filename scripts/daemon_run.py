@@ -358,7 +358,7 @@ class DispatchCallbacks:
                 target_ref=target.target_id,
                 subject_type="event_reminder",
                 priority="normal",
-                body_text=f"Reminder {reminder.reminder_id}",
+                body_text="A/B lane probe A minimal send",
                 dedupe_key=reminder.dedupe_key,
                 created_at_utc=now,
                 metadata_json={"daemon_cycle_id": row.get("cycle_id", "unknown")},
