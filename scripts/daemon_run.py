@@ -424,6 +424,21 @@ class DispatchCallbacks:
         self.emit({"event": "reconcile_summary", "processed": processed, "at_utc": now.isoformat()})
         return True
 
+    @staticmethod
+    def _provider_ref_transport_meaningful(provider_ref: str | None) -> bool:
+        if provider_ref is None:
+            return False
+        token = provider_ref.strip()
+        if not token:
+            return False
+        lowered = token.lower()
+        blocked = {"none", "null", "n/a", "na", "placeholder", "synthetic"}
+        if lowered in blocked:
+            return False
+        if lowered.startswith("att-") or lowered.startswith("rcpt:att-") or lowered.startswith("local:"):
+            return False
+        return True
+
     def _delivered_evidence_ok(self, result) -> bool:
         if result.reason_code != ReasonCode.DELIVERED_SUCCESS.value:
             return False
@@ -433,7 +448,8 @@ class DispatchCallbacks:
             return False
         if result.result_at_utc is None:
             return False
-        # provider_ref may be null by OC adapter contract v0.1.8
+        if not self._provider_ref_transport_meaningful(result.provider_receipt_ref):
+            return False
         return True
 
     def _persist_non_terminal_failure(
