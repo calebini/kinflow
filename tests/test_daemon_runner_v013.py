@@ -8,6 +8,7 @@ import sys
 import tempfile
 import unittest
 from datetime import UTC, datetime, timedelta
+from unittest.mock import patch
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -225,7 +226,8 @@ class DaemonRunnerV013Tests(unittest.TestCase):
             )
             store.save_reminder(reminder)
 
-            cb = DispatchCallbacks(store, lambda _e: None, oc_adapter=build_oc_adapter_binding())
+            with patch.dict(os.environ, {"KINFLOW_OC_SENDFN_MODE": "test_stub"}, clear=False):
+                cb = DispatchCallbacks(store, lambda _e: None, oc_adapter=build_oc_adapter_binding())
             rows = cb.list_candidates()
             self.assertGreaterEqual(len(rows), 1)
             ok = cb.process_candidate(rows[0])
@@ -330,7 +332,8 @@ class DaemonRunnerV013Tests(unittest.TestCase):
                     status="scheduled",
                 )
             )
-            cb = DispatchCallbacks(store, lambda _e: None, oc_adapter=build_oc_adapter_binding(), force_bypass=True)
+            with patch.dict(os.environ, {"KINFLOW_OC_SENDFN_MODE": "test_stub"}, clear=False):
+                cb = DispatchCallbacks(store, lambda _e: None, oc_adapter=build_oc_adapter_binding(), force_bypass=True)
             ok = cb.process_candidate(cb.list_candidates()[0])
             self.assertFalse(ok)
             attempt_row = store.conn.execute(
@@ -386,6 +389,7 @@ class DaemonRunnerV013Tests(unittest.TestCase):
                     "KINFLOW_LOCK_PATH": str((root / "daemon.lock").resolve()),
                     "KINFLOW_OWNER_META_PATH": str((root / "owner.json").resolve()),
                     "KINFLOW_DAEMON_TICK_MS": "1000",
+                    "KINFLOW_OC_SENDFN_MODE": "test_stub",
                 }
             )
 
@@ -428,6 +432,72 @@ class DaemonRunnerV013Tests(unittest.TestCase):
             self.assertIn("final_status", terminal)
             self.assertIn("trace_id", terminal)
             self.assertIn("owner_id", terminal)
+
+    def test_production_binding_requires_gateway_url(self) -> None:
+        from scripts.daemon_run import RunnerExit, build_oc_adapter_binding
+
+        with patch.dict(os.environ, {"KINFLOW_OC_SENDFN_MODE": "production"}, clear=False):
+            with patch.dict(os.environ, {"KINFLOW_GATEWAY_URL": ""}, clear=False):
+                with self.assertRaises(RunnerExit) as ctx:
+                    build_oc_adapter_binding()
+        self.assertEqual(ctx.exception.fail_token, "BOUNDARY_GATEWAY_URL_UNRESOLVED")
+
+    def test_real_send_fn_success_mapping(self) -> None:
+        from scripts.daemon_run import build_real_gateway_send_fn
+        from src.ctx002_v0.oc_adapter import OutboundMessage
+
+        fake_stdout = json.dumps({"messageId": "wamid.HBgMNTU1"})
+        completed = subprocess.CompletedProcess(args=["openclaw"], returncode=0, stdout=fake_stdout, stderr="")
+
+        with patch("scripts.daemon_run.subprocess.run", return_value=completed):
+            send_fn = build_real_gateway_send_fn({"KINFLOW_GATEWAY_URL": "ws://127.0.0.1:18789"})
+            result = send_fn(
+                OutboundMessage(
+                    delivery_id="d1",
+                    attempt_id="a1",
+                    attempt_index=1,
+                    trace_id="t1",
+                    causation_id="c1",
+                    channel_hint="whatsapp",
+                    target_ref="15551234567",
+                    subject_type="event_reminder",
+                    priority="normal",
+                    body_text="hello",
+                    dedupe_key="idem-1",
+                    created_at_utc=datetime.now(UTC),
+                )
+            )
+
+        self.assertEqual(result.normalized_outcome_class, "success")
+        self.assertEqual(result.provider_confirmation_strength, "confirmed")
+        self.assertEqual(result.provider_receipt_ref, "wamid.HBgMNTU1")
+
+    def test_real_send_fn_unmappable_response_fail_stop(self) -> None:
+        from scripts.daemon_run import BoundaryFailStopError, build_real_gateway_send_fn
+        from src.ctx002_v0.oc_adapter import OutboundMessage
+
+        completed = subprocess.CompletedProcess(args=["openclaw"], returncode=0, stdout="not-json", stderr="")
+
+        with patch("scripts.daemon_run.subprocess.run", return_value=completed):
+            send_fn = build_real_gateway_send_fn({"KINFLOW_GATEWAY_URL": "ws://127.0.0.1:18789"})
+            with self.assertRaises(BoundaryFailStopError) as ctx:
+                send_fn(
+                    OutboundMessage(
+                        delivery_id="d1",
+                        attempt_id="a1",
+                        attempt_index=1,
+                        trace_id="t1",
+                        causation_id="c1",
+                        channel_hint="whatsapp",
+                        target_ref="15551234567",
+                        subject_type="event_reminder",
+                        priority="normal",
+                        body_text="hello",
+                        dedupe_key="idem-1",
+                        created_at_utc=datetime.now(UTC),
+                    )
+                )
+        self.assertEqual(ctx.exception.code, "BOUNDARY_RESPONSE_UNMAPPABLE")
 
 
 if __name__ == "__main__":

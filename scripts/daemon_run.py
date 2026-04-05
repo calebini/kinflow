@@ -4,6 +4,7 @@ import json
 import os
 import signal
 import socket
+import subprocess
 import sys
 import time
 from dataclasses import dataclass
@@ -47,6 +48,14 @@ FAIL_TOKENS = {
     "DELIVERED_WITHOUT_ADAPTER_RESULT",
     "FALLBACK_PATH_USED_WITHOUT_FLAG",
     "ADAPTER_ALIGNMENT_SEAM_GAP",
+    "BOUNDARY_GATEWAY_URL_UNRESOLVED",
+    "BOUNDARY_CHANNEL_UNRESOLVED",
+    "BOUNDARY_DESTINATION_UNRESOLVED",
+    "BOUNDARY_IDEMPOTENCY_UNRESOLVED",
+    "BOUNDARY_SESSION_ACCOUNT_CONFLICT",
+    "BOUNDARY_REAL_SENDFN_UNAVAILABLE",
+    "BOUNDARY_GATEWAY_CALL_FAILED",
+    "BOUNDARY_RESPONSE_UNMAPPABLE",
 }
 
 
@@ -277,6 +286,13 @@ def append_takeover_event(cfg: RunnerConfig, event: dict[str, Any]) -> None:
         f.write(json.dumps(event, sort_keys=True) + "\n")
 
 
+class BoundaryFailStopError(RuntimeError):
+    def __init__(self, code: str, detail: str) -> None:
+        super().__init__(detail)
+        self.code = code
+        self.detail = detail
+
+
 def _default_adapter_send(msg: OutboundMessage) -> OpenClawSendResponseNormalized:
     return OpenClawSendResponseNormalized(
         normalized_outcome_class="success",
@@ -289,13 +305,242 @@ def _default_adapter_send(msg: OutboundMessage) -> OpenClawSendResponseNormalize
     )
 
 
+def _read_gateway_runtime_inputs(env: dict[str, str] | None = None) -> dict[str, str | None]:
+    env = env or os.environ
+    gateway_url = (env.get("KINFLOW_GATEWAY_URL") or "").strip()
+    if not gateway_url:
+        raise BoundaryFailStopError("BOUNDARY_GATEWAY_URL_UNRESOLVED", "missing KINFLOW_GATEWAY_URL")
+    return {
+        "gateway_url": gateway_url,
+        "gateway_token": (env.get("KINFLOW_GATEWAY_TOKEN") or "").strip() or None,
+        "gateway_password": (env.get("KINFLOW_GATEWAY_PASSWORD") or "").strip() or None,
+        "gateway_tls_fingerprint": (env.get("KINFLOW_GATEWAY_TLS_FINGERPRINT") or "").strip() or None,
+        "gateway_timeout_ms": str(int(env.get("KINFLOW_GATEWAY_TIMEOUT_MS", "10000"))),
+    }
+
+
+def _parse_optional_send_fields(outbound: OutboundMessage) -> dict[str, Any]:
+    payload = outbound.payload_json if isinstance(outbound.payload_json, dict) else {}
+    metadata = outbound.metadata_json if isinstance(outbound.metadata_json, dict) else {}
+
+    def _first_non_empty(*keys: str) -> str | None:
+        for key in keys:
+            for source in (payload, metadata):
+                value = source.get(key)
+                if isinstance(value, str) and value.strip():
+                    return value.strip()
+        return None
+
+    media_url = _first_non_empty("media_url", "mediaUrl")
+    media_urls: list[str] = []
+    for key in ("media_urls", "mediaUrls"):
+        for source in (payload, metadata):
+            value = source.get(key)
+            if isinstance(value, list):
+                media_urls = [str(item).strip() for item in value if str(item).strip()]
+                if media_urls:
+                    break
+        if media_urls:
+            break
+
+    gif_playback_raw = payload.get("gif_playback")
+    if gif_playback_raw is None:
+        gif_playback_raw = payload.get("gifPlayback")
+    if gif_playback_raw is None:
+        gif_playback_raw = metadata.get("gif_playback")
+    if gif_playback_raw is None:
+        gif_playback_raw = metadata.get("gifPlayback")
+
+    return {
+        "account_id": _first_non_empty("account_id", "accountId"),
+        "session_key": _first_non_empty("session_key", "sessionKey"),
+        "media_url": media_url,
+        "media_urls": media_urls,
+        "gif_playback": bool(gif_playback_raw) if gif_playback_raw is not None else None,
+        "effective_account_id": _first_non_empty("effective_account_id", "effectiveAccountId"),
+        "effective_session_key": _first_non_empty("effective_session_key", "effectiveSessionKey"),
+    }
+
+
+def _has_session_account_conflict(optional_fields: dict[str, Any]) -> bool:
+    account_id = optional_fields.get("account_id")
+    session_key = optional_fields.get("session_key")
+    if not (account_id and session_key):
+        return False
+
+    effective_account_id = optional_fields.get("effective_account_id")
+    effective_session_key = optional_fields.get("effective_session_key")
+    if effective_account_id and effective_account_id != account_id:
+        return True
+    if effective_session_key and effective_session_key != session_key:
+        return True
+    return False
+
+
+def _extract_gateway_call_json(stdout: str) -> dict[str, Any] | None:
+    text = (stdout or "").strip()
+    if not text:
+        return None
+    try:
+        payload = json.loads(text)
+        if isinstance(payload, dict):
+            return payload
+    except json.JSONDecodeError:
+        pass
+    return None
+
+
+def _normalize_gateway_send_response(payload: dict[str, Any]) -> OpenClawSendResponseNormalized:
+    # successful gateway send/no transport error -> success
+    if not isinstance(payload, dict):
+        raise BoundaryFailStopError("BOUNDARY_RESPONSE_UNMAPPABLE", "gateway payload not an object")
+
+    provider_receipt_ref = None
+    for key in ("messageId", "id", "receipt", "ref"):
+        value = payload.get(key)
+        if isinstance(value, str) and value.strip():
+            candidate = value.strip()
+            lowered = candidate.lower()
+            if lowered.startswith("att-") or lowered.startswith("rcpt:att-"):
+                provider_receipt_ref = None
+            else:
+                provider_receipt_ref = candidate
+            break
+
+    provider_confirmation_strength = "confirmed" if provider_receipt_ref else "accepted"
+
+    return OpenClawSendResponseNormalized(
+        normalized_outcome_class="success",
+        provider_status_code="ok",
+        provider_receipt_ref=provider_receipt_ref,
+        provider_error_class_hint=None,
+        provider_error_message_sanitized=None,
+        provider_confirmation_strength=provider_confirmation_strength,
+        raw_observed_at_utc=datetime.now(UTC),
+    )
+
+
+def _gateway_failure_response(*, code: str, message: str) -> OpenClawSendResponseNormalized:
+    lowered = message.lower()
+    if "timeout" in lowered or "timed out" in lowered or "unavailable" in lowered or "rate" in lowered:
+        outcome = "transient"
+        error_class = "transient"
+    elif "blocked" in lowered or "policy" in lowered:
+        outcome = "blocked"
+        error_class = "policy"
+    elif "suppressed" in lowered or "skipped" in lowered:
+        outcome = "suppressed"
+        error_class = "policy"
+    elif "auth" in lowered or "invalid request" in lowered or "unsupported" in lowered or "unknown target" in lowered:
+        outcome = "permanent"
+        error_class = "permanent"
+    else:
+        outcome = "transient"
+        error_class = "transient"
+
+    return OpenClawSendResponseNormalized(
+        normalized_outcome_class=outcome,
+        provider_status_code=code,
+        provider_receipt_ref=None,
+        provider_error_class_hint=error_class,
+        provider_error_message_sanitized=message.strip()[:500] if message else code,
+        provider_confirmation_strength="none",
+        raw_observed_at_utc=datetime.now(UTC),
+    )
+
+
+def build_real_gateway_send_fn(env: dict[str, str] | None = None):
+    inputs = _read_gateway_runtime_inputs(env)
+
+    def _send(msg: OutboundMessage) -> OpenClawSendResponseNormalized:
+        channel = (msg.channel_hint or "").strip().lower()
+        if not channel:
+            raise BoundaryFailStopError("BOUNDARY_CHANNEL_UNRESOLVED", "missing outbound channel")
+        destination = (msg.target_ref or "").strip()
+        if not destination:
+            raise BoundaryFailStopError("BOUNDARY_DESTINATION_UNRESOLVED", "missing outbound destination")
+        idempotency_key = (msg.dedupe_key or "").strip()
+        if not idempotency_key:
+            raise BoundaryFailStopError("BOUNDARY_IDEMPOTENCY_UNRESOLVED", "missing outbound idempotency key")
+
+        optional_fields = _parse_optional_send_fields(msg)
+        if _has_session_account_conflict(optional_fields):
+            raise BoundaryFailStopError(
+                "BOUNDARY_SESSION_ACCOUNT_CONFLICT",
+                "session/account conflict in effective lane context",
+            )
+
+        params: dict[str, Any] = {
+            "channel": channel,
+            "to": destination,
+            "message": msg.body_text,
+            "idempotencyKey": idempotency_key,
+        }
+        if optional_fields.get("account_id"):
+            params["accountId"] = optional_fields["account_id"]
+        if optional_fields.get("session_key"):
+            params["sessionKey"] = optional_fields["session_key"]
+        if optional_fields.get("media_url"):
+            params["mediaUrl"] = optional_fields["media_url"]
+        if optional_fields.get("media_urls"):
+            params["mediaUrls"] = optional_fields["media_urls"]
+        if optional_fields.get("gif_playback") is not None:
+            params["gifPlayback"] = optional_fields["gif_playback"]
+
+        cmd = [
+            "openclaw",
+            "gateway",
+            "call",
+            "send",
+            "--url",
+            str(inputs["gateway_url"]),
+            "--timeout",
+            str(inputs["gateway_timeout_ms"]),
+            "--params",
+            json.dumps(params, sort_keys=True),
+            "--json",
+        ]
+        if inputs["gateway_token"]:
+            cmd.extend(["--token", str(inputs["gateway_token"])])
+        if inputs["gateway_password"]:
+            cmd.extend(["--password", str(inputs["gateway_password"])])
+
+        completed = subprocess.run(cmd, capture_output=True, text=True, timeout=int(inputs["gateway_timeout_ms"]))
+        if completed.returncode != 0:
+            return _gateway_failure_response(
+                code="BOUNDARY_GATEWAY_CALL_FAILED",
+                message=(completed.stderr or completed.stdout or "gateway call failed"),
+            )
+
+        parsed = _extract_gateway_call_json(completed.stdout)
+        if parsed is None:
+            raise BoundaryFailStopError("BOUNDARY_RESPONSE_UNMAPPABLE", "gateway call returned non-json payload")
+        return _normalize_gateway_send_response(parsed)
+
+    return _send
+
+
 def build_oc_adapter_binding(send_fn=None) -> OpenClawGatewayAdapter | None:
     if os.environ.get("KINFLOW_DISABLE_OC_ADAPTER_BINDING") == "1":
         return None
+
+    resolved_send_fn = send_fn
+    if resolved_send_fn is None:
+        send_mode = (os.environ.get("KINFLOW_OC_SENDFN_MODE") or "production").strip().lower()
+        if send_mode == "test_stub":
+            resolved_send_fn = _default_adapter_send
+        else:
+            try:
+                resolved_send_fn = build_real_gateway_send_fn()
+            except BoundaryFailStopError as exc:
+                raise RunnerExit(exc.code, exc.detail) from exc
+            except Exception as exc:
+                raise RunnerExit("BOUNDARY_REAL_SENDFN_UNAVAILABLE", str(exc)) from exc
+
     spec_path = ROOT / "specs" / "KINFLOW_REASON_CODES_CANONICAL.md"
     spec_hash = __import__("hashlib").sha256(spec_path.read_bytes()).hexdigest()
     binding = ReasonCodeBinding(spec_path=str(spec_path), spec_version="v1.0.3", spec_sha256=spec_hash)
-    return OpenClawGatewayAdapter(send_fn=send_fn or _default_adapter_send, reason_binding=binding)
+    return OpenClawGatewayAdapter(send_fn=resolved_send_fn, reason_binding=binding)
 
 
 FAIL_TOKEN_REASON_CODE_MAP = {
@@ -364,7 +609,23 @@ class DispatchCallbacks:
                 metadata_json={"daemon_cycle_id": row.get("cycle_id", "unknown")},
                 metadata_schema_version=1,
             )
-            result = self.oc_adapter.send(outbound)
+            try:
+                result = self.oc_adapter.send(outbound)
+            except BoundaryFailStopError as exc:
+                self.emit(
+                    {
+                        "event": "dispatch_boundary_fail_stop",
+                        "boundary_code": exc.code,
+                        "reminder_id": reminder.reminder_id,
+                    }
+                )
+                return self._persist_non_terminal_failure(
+                    reminder,
+                    ReasonCode.FAILED_PROVIDER_PERMANENT.value,
+                    exc.code,
+                    now,
+                    attempt_id=outbound.attempt_id,
+                )
             if not self._delivered_evidence_ok(result):
                 return self._fail_token_consequence("DELIVERED_WITHOUT_ADAPTER_RESULT", reminder, "whatsapp-daemon", now)
 
