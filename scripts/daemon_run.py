@@ -74,6 +74,9 @@ class RunnerConfig:
     expected_deployment_contract_version: str
     max_consecutive_fatal_cycles: int
     evidence_root: Path
+    accept_mode_verification_window_sec: int
+    accept_mode_open_gauge_alert_threshold: int
+    accept_mode_open_gauge_alert_cycles: int
 
 
 class RunnerExit(RuntimeError):
@@ -219,12 +222,21 @@ def load_runner_config(env: dict[str, str] | None = None) -> RunnerConfig:
             expected_deployment_contract_version=env.get("KINFLOW_EXPECT_DEPLOYMENT_CONTRACT", DEPLOYMENT_CONTRACT_VERSION),
             max_consecutive_fatal_cycles=int(env.get("KINFLOW_MAX_CONSECUTIVE_FATAL", "3")),
             evidence_root=Path(env.get("KINFLOW_EVIDENCE_ROOT", str(ROOT / "tmp" / "runner-evidence"))),
+            accept_mode_verification_window_sec=int(env.get("KINFLOW_ACCEPT_MODE_VERIFICATION_WINDOW_SEC", "120")),
+            accept_mode_open_gauge_alert_threshold=int(env.get("KINFLOW_ACCEPT_MODE_OPEN_GAUGE_ALERT_THRESHOLD", "25")),
+            accept_mode_open_gauge_alert_cycles=int(env.get("KINFLOW_ACCEPT_MODE_OPEN_GAUGE_ALERT_CYCLES", "5")),
         )
     except ValueError as exc:
         raise RunnerExit("STARTUP_CONFIG_INVALID", f"invalid numeric env: {exc}") from exc
 
     if cfg.tick_ms <= 0 or cfg.max_consecutive_fatal_cycles <= 0:
         raise RunnerExit("STARTUP_CONFIG_INVALID", "tick/fatal threshold must be >0")
+    if (
+        cfg.accept_mode_verification_window_sec <= 0
+        or cfg.accept_mode_open_gauge_alert_threshold <= 0
+        or cfg.accept_mode_open_gauge_alert_cycles <= 0
+    ):
+        raise RunnerExit("STARTUP_CONFIG_INVALID", "accept-mode config values must be positive integers")
     return cfg
 
 
@@ -284,6 +296,24 @@ def append_takeover_event(cfg: RunnerConfig, event: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("a", encoding="utf-8") as f:
         f.write(json.dumps(event, sort_keys=True) + "\n")
+
+
+def ensure_reason_codes_compatibility(store: SqliteStateStore) -> None:
+    upserts = [
+        (ReasonCode.ACCEPTED_UNVERIFIED.value, "blocked"),
+        (ReasonCode.FAILED_ACCEPTED_UNVERIFIED_TIMEOUT.value, "permanent"),
+    ]
+    for code, klass in upserts:
+        store.conn.execute(
+            "INSERT OR REPLACE INTO enum_reason_codes(code, class, active, version_tag) VALUES (?, ?, 1, ?)",
+            (code, klass, "v0.2.6"),
+        )
+    store.conn.commit()
+
+    for code, _ in upserts:
+        row = store.conn.execute("SELECT 1 FROM enum_reason_codes WHERE code=? LIMIT 1", (code,)).fetchone()
+        if row is None:
+            raise RunnerExit("STARTUP_CONFIG_INVALID", f"reason code compatibility missing: {code}")
 
 
 class BoundaryFailStopError(RuntimeError):
@@ -539,13 +569,18 @@ def build_oc_adapter_binding(send_fn=None) -> OpenClawGatewayAdapter | None:
 
     spec_path = ROOT / "specs" / "KINFLOW_REASON_CODES_CANONICAL.md"
     spec_hash = __import__("hashlib").sha256(spec_path.read_bytes()).hexdigest()
-    binding = ReasonCodeBinding(spec_path=str(spec_path), spec_version="v1.0.5", spec_sha256=spec_hash)
+    binding = ReasonCodeBinding(spec_path=str(spec_path), spec_version="v1.0.6", spec_sha256=spec_hash)
     return OpenClawGatewayAdapter(send_fn=resolved_send_fn, reason_binding=binding)
 
 
 SEAM_CLASSIFICATION_VERSION = "adapter-seam-v9"
 TOKEN_ORIGIN_STAGES = {"PRE_SEND", "ADAPTER_EXECUTION", "POST_ADAPTER", "UNKNOWN"}
 POST_SEND_ORIGIN_STAGES = {"ADAPTER_EXECUTION", "POST_ADAPTER", "UNKNOWN"}
+ACCEPT_MODE_STATE_OPEN = "OPEN_UNVERIFIED"
+ACCEPT_MODE_STATE_CLOSED_TIMEOUT = "CLOSED_TIMEOUT"
+BLOCK_SUBTYPE_ACCEPT_SUCCESS_ONLY = "ACCEPT_SUCCESS_ONLY"
+TRANSITION_PROMOTE = "PROMOTE_DELIVERED"
+TRANSITION_DEMOTE = "DEMOTE_TIMEOUT"
 POST_SEND_SEAM_TOKENS = {
     "DELIVERED_WITHOUT_ADAPTER_RESULT",
     "FALLBACK_PATH_USED_WITHOUT_FLAG",
@@ -584,15 +619,22 @@ class DispatchCallbacks:
         emit_fn,
         *,
         oc_adapter: OpenClawGatewayAdapter,
+        cfg: RunnerConfig,
         allow_fallback: bool = False,
         force_bypass: bool = False,
     ) -> None:
         self.store = store
         self.emit = emit_fn
         self.oc_adapter = oc_adapter
+        self.cfg = cfg
         self.allow_fallback = allow_fallback
         self.force_bypass = force_bypass
         self.contract_integrity_fail_total = 0
+        self.accepted_unverified_total = 0
+        self.accepted_unverified_promoted_total = 0
+        self.accepted_unverified_demoted_total = 0
+        self.accepted_unverified_open_gauge = 0
+        self.accepted_unverified_open_gauge_consecutive = 0
 
     def list_candidates(self) -> list[dict[str, Any]]:
         due = self.store.list_due_reminders(datetime.now(UTC), limit=100)
@@ -673,7 +715,13 @@ class DispatchCallbacks:
             if adapter_result is not None and not self._delivered_evidence_ok(adapter_result):
                 fail_token = "DELIVERED_WITHOUT_ADAPTER_RESULT"
 
-            if fail_token is not None or adapter_exception is not None:
+            classification = self._classify_post_send_seam(
+                adapter_result=adapter_result,
+                adapter_exception=adapter_exception,
+                fail_token=fail_token,
+                token_origin_stage=token_origin_stage,
+            )
+            if classification.seam_branch in {"A", "B", "C"}:
                 return self._route_post_send_failure(
                     reminder=reminder,
                     now=now,
@@ -683,6 +731,14 @@ class DispatchCallbacks:
                     adapter_result=adapter_result,
                     adapter_exception=adapter_exception,
                     attempt_id=outbound.attempt_id,
+                )
+
+            if adapter_result is not None and self._is_accept_mode_candidate(adapter_result):
+                return self._assign_accept_mode_unverified(
+                    reminder=reminder,
+                    now=now,
+                    attempt_id=outbound.attempt_id,
+                    fail_token=fail_token,
                 )
 
             if adapter_result is None:
@@ -754,7 +810,134 @@ class DispatchCallbacks:
                 reminder.next_attempt_at_utc = None
                 self.store.update_reminder(reminder)
                 processed += 1
-        self.emit({"event": "reconcile_summary", "processed": processed, "at_utc": now.isoformat()})
+
+        open_rows = self.store.conn.execute(
+            """
+            SELECT attempt_id, reminder_id, attempted_at_utc, provider_ref, provider_status_code
+            FROM delivery_attempts
+            WHERE status='failed' AND reason_code=?
+            ORDER BY attempted_at_utc ASC
+            """,
+            (ReasonCode.ACCEPTED_UNVERIFIED.value,),
+        ).fetchall()
+        open_count = 0
+        for row in open_rows:
+            attempt_id = row["attempt_id"]
+            reminder_id = row["reminder_id"]
+            accepted_at = datetime.fromisoformat(row["attempted_at_utc"])
+            reminder = next((r for r in self.store.list_reminders() if r.reminder_id == reminder_id), None)
+            if reminder is None:
+                continue
+            if self._transition_already_recorded(attempt_id=attempt_id, transition_type=TRANSITION_PROMOTE) or self._transition_already_recorded(
+                attempt_id=attempt_id, transition_type=TRANSITION_DEMOTE
+            ):
+                continue
+
+            provider_ref = row["provider_ref"]
+            provider_status_code = row["provider_status_code"]
+            if self._provider_ref_transport_meaningful(provider_ref):
+                self._mutate_attempt_row(
+                    attempt_id=attempt_id,
+                    status="delivered",
+                    reason_code=ReasonCode.DELIVERED_SUCCESS.value,
+                    provider_ref=provider_ref,
+                    provider_status_code=provider_status_code or "ok",
+                    provider_error_text=None,
+                    provider_accept_only=False,
+                    delivery_confidence="provider_confirmed",
+                    result_at_utc=now,
+                )
+                reminder.status = "delivered"
+                self.store.update_reminder(reminder)
+                self.accepted_unverified_promoted_total += 1
+                self.emit(
+                    {
+                        "event": "accepted_unverified_promoted",
+                        "attempt_id": attempt_id,
+                        "reminder_id": reminder_id,
+                        "transition_type": TRANSITION_PROMOTE,
+                        "accepted_unverified_promoted_total": self.accepted_unverified_promoted_total,
+                    }
+                )
+                self._record_transition_event(
+                    reminder_id=reminder_id,
+                    attempt_id=attempt_id,
+                    transition_type=TRANSITION_PROMOTE,
+                    reason_code=ReasonCode.DELIVERED_SUCCESS,
+                    payload_suffix="accept_mode_state=CLOSED_PROMOTED;terminal_decision=BLOCK",
+                )
+                processed += 1
+                continue
+
+            timeout_at = accepted_at + timedelta(seconds=self.cfg.accept_mode_verification_window_sec)
+            if now >= timeout_at:
+                self._mutate_attempt_row(
+                    attempt_id=attempt_id,
+                    status="failed",
+                    reason_code=ReasonCode.FAILED_ACCEPTED_UNVERIFIED_TIMEOUT.value,
+                    provider_ref=None,
+                    provider_status_code=None,
+                    provider_error_text="verification window expired",
+                    provider_accept_only=False,
+                    delivery_confidence="none",
+                    result_at_utc=now,
+                )
+                reminder.status = "failed"
+                self.store.update_reminder(reminder)
+                self.accepted_unverified_demoted_total += 1
+                self.emit(
+                    {
+                        "event": "accepted_unverified_demoted",
+                        "attempt_id": attempt_id,
+                        "reminder_id": reminder_id,
+                        "transition_type": TRANSITION_DEMOTE,
+                        "accepted_unverified_demoted_total": self.accepted_unverified_demoted_total,
+                    }
+                )
+                self._record_transition_event(
+                    reminder_id=reminder_id,
+                    attempt_id=attempt_id,
+                    transition_type=TRANSITION_DEMOTE,
+                    reason_code=ReasonCode.FAILED_ACCEPTED_UNVERIFIED_TIMEOUT,
+                    payload_suffix="accept_mode_state=CLOSED_TIMEOUT;terminal_decision=BLOCK",
+                )
+                processed += 1
+            else:
+                open_count += 1
+                self._append_delivery_audit(
+                    reminder_id,
+                    ReasonCode.ACCEPTED_UNVERIFIED,
+                    "accept_mode_state=OPEN_UNVERIFIED;allowed_blocking_reason=ACCEPTED_UNVERIFIED_OPEN_WINDOW;terminal_decision=BLOCK",
+                )
+
+        self.accepted_unverified_open_gauge = open_count
+        if open_count > self.cfg.accept_mode_open_gauge_alert_threshold:
+            self.accepted_unverified_open_gauge_consecutive += 1
+        else:
+            self.accepted_unverified_open_gauge_consecutive = 0
+
+        if self.accepted_unverified_open_gauge_consecutive >= self.cfg.accept_mode_open_gauge_alert_cycles:
+            self.emit(
+                {
+                    "event": "accepted_unverified_open_gauge_alert",
+                    "level": "ALERT",
+                    "open_gauge": open_count,
+                    "threshold": self.cfg.accept_mode_open_gauge_alert_threshold,
+                    "cycles": self.accepted_unverified_open_gauge_consecutive,
+                }
+            )
+
+        self.emit(
+            {
+                "event": "reconcile_summary",
+                "processed": processed,
+                "at_utc": now.isoformat(),
+                "accepted_unverified_open_gauge": open_count,
+                "accepted_unverified_total": self.accepted_unverified_total,
+                "accepted_unverified_promoted_total": self.accepted_unverified_promoted_total,
+                "accepted_unverified_demoted_total": self.accepted_unverified_demoted_total,
+            }
+        )
         return True
 
     @staticmethod
@@ -779,7 +962,7 @@ class DispatchCallbacks:
     def _delivered_evidence_ok(self, result) -> bool:
         if result.reason_code != ReasonCode.DELIVERED_SUCCESS.value:
             return False
-        if not result.delivery_confidence:
+        if result.delivery_confidence not in {"provider_confirmed", "provider_accepted"}:
             return False
         if not result.provider_status_code:
             return False
@@ -788,6 +971,129 @@ class DispatchCallbacks:
         if not self._provider_ref_transport_meaningful(result.provider_receipt_ref):
             return False
         return True
+
+    def _is_accept_mode_candidate(self, result) -> bool:
+        if result is None:
+            return False
+        if result.reason_code != ReasonCode.DELIVERED_SUCCESS.value:
+            return False
+        if result.delivery_confidence not in {"provider_confirmed", "provider_accepted"}:
+            return False
+        if not result.provider_status_code:
+            return False
+        if result.result_at_utc is None:
+            return False
+        return not self._provider_ref_transport_meaningful(result.provider_receipt_ref)
+
+    def _record_transition_event(
+        self,
+        *,
+        reminder_id: str,
+        attempt_id: str,
+        transition_type: str,
+        reason_code: ReasonCode,
+        payload_suffix: str,
+    ) -> None:
+        payload = (
+            f"attempt_id={attempt_id};transition_type={transition_type};"
+            f"transition_idempotency_key={attempt_id}:{transition_type};{payload_suffix}"
+        )
+        self._append_delivery_audit(reminder_id, reason_code, payload)
+
+    def _transition_already_recorded(self, *, attempt_id: str, transition_type: str) -> bool:
+        token = f"transition_idempotency_key={attempt_id}:{transition_type}"
+        row = self.store.conn.execute(
+            "SELECT 1 FROM audit_log WHERE payload_json LIKE ? LIMIT 1",
+            (f"%{token}%",),
+        ).fetchone()
+        return row is not None
+
+    def _mutate_attempt_row(
+        self,
+        *,
+        attempt_id: str,
+        status: str,
+        reason_code: str,
+        provider_ref: str | None,
+        provider_status_code: str | None,
+        provider_error_text: str | None,
+        provider_accept_only: bool,
+        delivery_confidence: str,
+        result_at_utc: datetime,
+    ) -> None:
+        self.store.conn.execute(
+            """
+            UPDATE delivery_attempts
+            SET status=?, reason_code=?, provider_ref=?, provider_status_code=?, provider_error_text=?,
+                provider_accept_only=?, delivery_confidence=?, result_at_utc=?
+            WHERE attempt_id=?
+            """,
+            (
+                status,
+                reason_code,
+                provider_ref,
+                provider_status_code,
+                provider_error_text,
+                int(provider_accept_only),
+                delivery_confidence,
+                result_at_utc.isoformat(),
+                attempt_id,
+            ),
+        )
+        self.store.conn.commit()
+
+    def _assign_accept_mode_unverified(
+        self,
+        *,
+        reminder: Reminder,
+        now: datetime,
+        attempt_id: str,
+        fail_token: str | None,
+    ) -> bool:
+        reminder.status = "failed"
+        self.store.update_reminder(reminder)
+        self.store.append_delivery_attempt(
+            attempt_id=attempt_id,
+            reminder_id=reminder.reminder_id,
+            attempt_index=max(reminder.attempts, 1),
+            attempted_at_utc=now,
+            status="failed",
+            reason_code=ReasonCode.ACCEPTED_UNVERIFIED.value,
+            provider_ref=None,
+            provider_status_code=None,
+            provider_error_text=None,
+            provider_accept_only=False,
+            delivery_confidence="none",
+            result_at_utc=now,
+            trace_id="daemon_runner",
+            causation_id=reminder.reminder_id,
+            source_adapter_attempt_id=attempt_id,
+        )
+        self.accepted_unverified_total += 1
+        self.emit(
+            {
+                "event": "accepted_unverified_assigned",
+                "attempt_id": attempt_id,
+                "reminder_id": reminder.reminder_id,
+                "reason_code": ReasonCode.ACCEPTED_UNVERIFIED.value,
+                "accept_mode_state": ACCEPT_MODE_STATE_OPEN,
+                "terminal_decision": "BLOCK",
+                "block_subtype": BLOCK_SUBTYPE_ACCEPT_SUCCESS_ONLY,
+                "fail_token": fail_token,
+                "accepted_unverified_total": self.accepted_unverified_total,
+            }
+        )
+        self._record_transition_event(
+            reminder_id=reminder.reminder_id,
+            attempt_id=attempt_id,
+            transition_type="ASSIGN_OPEN",
+            reason_code=ReasonCode.ACCEPTED_UNVERIFIED,
+            payload_suffix=(
+                f"accept_mode_state={ACCEPT_MODE_STATE_OPEN};terminal_decision=BLOCK;"
+                f"block_subtype={BLOCK_SUBTYPE_ACCEPT_SUCCESS_ONLY};fail_token={fail_token}"
+            ),
+        )
+        return False
 
     def _persist_non_terminal_failure(
         self,
@@ -885,6 +1191,16 @@ class DispatchCallbacks:
         normalized_origin = self._normalize_token_origin_stage(token_origin_stage)
         adapter_result_present = adapter_result is not None
         evidence_ok = bool(adapter_result_present and self._delivered_evidence_ok(adapter_result))
+
+        if adapter_result_present and adapter_exception is None and self._is_accept_mode_candidate(adapter_result):
+            return SeamClassification(
+                seam_reason_code=None,
+                adapter_result_present=True,
+                adapter_result_valid=True,
+                evidence_ok=False,
+                seam_branch="NONE",
+                token_origin_stage=normalized_origin,
+            )
 
         seam_predicate = bool(adapter_exception is not None or fail_token is not None or not evidence_ok)
         if not seam_predicate:
@@ -1161,6 +1477,7 @@ def run() -> int:
 
         # 7) initialize store/adapter/runtime bindings
         store = SqliteStateStore.from_path(db_path)
+        ensure_reason_codes_compatibility(store)
         oc_adapter = build_oc_adapter_binding()
         adapter_bound = bool(oc_adapter is not None and hasattr(oc_adapter, "send") and callable(getattr(oc_adapter, "send", None)))
         if not adapter_bound:
@@ -1180,6 +1497,7 @@ def run() -> int:
             store,
             _emit,
             oc_adapter=oc_adapter,
+            cfg=cfg,
             allow_fallback=os.environ.get("KINFLOW_ALLOW_WHATSAPP_FALLBACK") == "1",
             force_bypass=os.environ.get("KINFLOW_FORCE_WHATSAPP_BYPASS") == "1",
         )

@@ -46,7 +46,9 @@ INSERT OR REPLACE INTO enum_reason_codes(code, class, active, version_tag) VALUE
 ('CAPTURE_ONLY_BLOCKED','system',1,'v0.2.6'),
 ('FAILED_ADAPTER_RESULT_MISSING','system',1,'v0.2.6'),
 ('FAILED_ADAPTER_RESULT_INVALID','system',1,'v0.2.6'),
-('FAILED_ADAPTER_RESULT_UNMAPPABLE','system',1,'v0.2.6');
+('FAILED_ADAPTER_RESULT_UNMAPPABLE','system',1,'v0.2.6'),
+('ACCEPTED_UNVERIFIED','system',1,'v0.2.6'),
+('FAILED_ACCEPTED_UNVERIFIED_TIMEOUT','system',1,'v0.2.6');
 
 INSERT OR REPLACE INTO enum_audit_stages(stage, active, version_tag) VALUES
 ('intake',1,'v0.2.6'),

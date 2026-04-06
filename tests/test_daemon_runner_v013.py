@@ -41,6 +41,29 @@ def _validated_runner_subprocess_context(root: Path) -> tuple[list[str], dict[st
     return [python_exec, str(resolved_script)], env, str(resolved_root)
 
 
+def _test_runner_cfg(root: Path):
+    from scripts.daemon_run import RunnerConfig
+
+    return RunnerConfig(
+        tick_ms=1000,
+        shutdown_grace_ms=1000,
+        lock_timeout_ms=100,
+        stale_threshold_ms=100,
+        health_path=root / "health.json",
+        state_stamp_path=root / "state.state",
+        lock_path=root / "daemon.lock",
+        owner_meta_path=root / "owner.json",
+        db_path=str(root / "db.sqlite"),
+        expected_runtime_contract_version="v0.1.4",
+        expected_deployment_contract_version="v0.1.4",
+        max_consecutive_fatal_cycles=2,
+        evidence_root=root / "evidence",
+        accept_mode_verification_window_sec=120,
+        accept_mode_open_gauge_alert_threshold=25,
+        accept_mode_open_gauge_alert_cycles=5,
+    )
+
+
 class DaemonRunnerV013Tests(unittest.TestCase):
     def test_version_binding_validation_fails_mismatch(self) -> None:
         from scripts.daemon_run import RunnerExit, load_runner_config, validate_version_bindings
@@ -130,7 +153,7 @@ class DaemonRunnerV013Tests(unittest.TestCase):
             self.assertTrue(s2["cycle_id"].endswith(":2"))
 
     def test_singleton_takeover_evidence_shape(self) -> None:
-        from scripts.daemon_run import RunnerConfig, SingletonGuard, append_takeover_event
+        from scripts.daemon_run import SingletonGuard, append_takeover_event
 
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
@@ -143,21 +166,8 @@ class DaemonRunnerV013Tests(unittest.TestCase):
                     }
                 )
             )
-            cfg = RunnerConfig(
-                tick_ms=1000,
-                shutdown_grace_ms=1000,
-                lock_timeout_ms=100,
-                stale_threshold_ms=100,
-                health_path=root / "health.json",
-                state_stamp_path=root / "state.state",
-                lock_path=root / "daemon.lock",
-                owner_meta_path=owner_path,
-                db_path=str(root / "db.sqlite"),
-                expected_runtime_contract_version="v0.1.4",
-                expected_deployment_contract_version="v0.1.4",
-                max_consecutive_fatal_cycles=2,
-                evidence_root=root / "evidence",
-            )
+            cfg = _test_runner_cfg(root)
+            cfg = cfg.__class__(**{**cfg.__dict__, "owner_meta_path": owner_path})
             guard = SingletonGuard(cfg, "new-owner", 123, "host")
             evt = guard.acquire_and_verify()
             self.assertIsNotNone(evt)
@@ -227,7 +237,7 @@ class DaemonRunnerV013Tests(unittest.TestCase):
             store.save_reminder(reminder)
 
             with patch.dict(os.environ, {"KINFLOW_OC_SENDFN_MODE": "test_stub"}, clear=False):
-                cb = DispatchCallbacks(store, lambda _e: None, oc_adapter=build_oc_adapter_binding())
+                cb = DispatchCallbacks(store, lambda _e: None, oc_adapter=build_oc_adapter_binding(), cfg=_test_runner_cfg(Path(td)))
             rows = cb.list_candidates()
             self.assertGreaterEqual(len(rows), 1)
             ok = cb.process_candidate(rows[0])
@@ -287,7 +297,7 @@ class DaemonRunnerV013Tests(unittest.TestCase):
                     raw_observed_at_utc=datetime.now(UTC),
                 )
 
-            cb = DispatchCallbacks(store, lambda _e: None, oc_adapter=build_oc_adapter_binding(bad_send))
+            cb = DispatchCallbacks(store, lambda _e: None, oc_adapter=build_oc_adapter_binding(bad_send), cfg=_test_runner_cfg(Path(td)))
             ok = cb.process_candidate(cb.list_candidates()[0])
             self.assertFalse(ok)
             reminder = store.list_reminders()[0]
@@ -334,7 +344,7 @@ class DaemonRunnerV013Tests(unittest.TestCase):
                 )
             )
             with patch.dict(os.environ, {"KINFLOW_OC_SENDFN_MODE": "test_stub"}, clear=False):
-                cb = DispatchCallbacks(store, lambda _e: None, oc_adapter=build_oc_adapter_binding(), force_bypass=True)
+                cb = DispatchCallbacks(store, lambda _e: None, oc_adapter=build_oc_adapter_binding(), cfg=_test_runner_cfg(Path(td)), force_bypass=True)
             ok = cb.process_candidate(cb.list_candidates()[0])
             self.assertFalse(ok)
             attempt_row = store.conn.execute(
@@ -389,7 +399,7 @@ class DaemonRunnerV013Tests(unittest.TestCase):
             )
             store.save_reminder(reminder)
             with patch.dict(os.environ, {"KINFLOW_OC_SENDFN_MODE": "test_stub"}, clear=False):
-                cb = DispatchCallbacks(store, lambda e: events.append(e), oc_adapter=build_oc_adapter_binding(), force_bypass=True)
+                cb = DispatchCallbacks(store, lambda e: events.append(e), oc_adapter=build_oc_adapter_binding(), cfg=_test_runner_cfg(Path(td)), force_bypass=True)
             ok = cb.process_candidate(cb.list_candidates()[0])
             self.assertFalse(ok)
             seam_evt = [e for e in events if e.get("event") == "adapter_seam_failure_classified"][-1]
@@ -447,7 +457,7 @@ class DaemonRunnerV013Tests(unittest.TestCase):
                 )
 
             with patch.dict(os.environ, {"KINFLOW_OC_SENDFN_MODE": "test_stub"}, clear=False):
-                cb = DispatchCallbacks(store, lambda e: events.append(e), oc_adapter=build_oc_adapter_binding(bad_send))
+                cb = DispatchCallbacks(store, lambda e: events.append(e), oc_adapter=build_oc_adapter_binding(bad_send), cfg=_test_runner_cfg(Path(td)))
             ok = cb.process_candidate(cb.list_candidates()[0])
             self.assertFalse(ok)
             seam_evt = [e for e in events if e.get("event") == "adapter_seam_failure_classified"][-1]
@@ -505,7 +515,7 @@ class DaemonRunnerV013Tests(unittest.TestCase):
                 )
 
             with patch.dict(os.environ, {"KINFLOW_OC_SENDFN_MODE": "test_stub"}, clear=False):
-                cb = DispatchCallbacks(store, lambda e: events.append(e), oc_adapter=build_oc_adapter_binding(bad_send))
+                cb = DispatchCallbacks(store, lambda e: events.append(e), oc_adapter=build_oc_adapter_binding(bad_send), cfg=_test_runner_cfg(Path(td)))
             self.assertFalse(cb.process_candidate(cb.list_candidates()[0]))
             row = store.conn.execute(
                 "SELECT provider_ref, provider_status_code, delivery_confidence FROM delivery_attempts ORDER BY rowid DESC LIMIT 1"
@@ -557,7 +567,7 @@ class DaemonRunnerV013Tests(unittest.TestCase):
             store.save_reminder(reminder)
 
             with patch.dict(os.environ, {"KINFLOW_OC_SENDFN_MODE": "test_stub"}, clear=False):
-                cb = DispatchCallbacks(store, lambda e: events.append(e), oc_adapter=build_oc_adapter_binding())
+                cb = DispatchCallbacks(store, lambda e: events.append(e), oc_adapter=build_oc_adapter_binding(), cfg=_test_runner_cfg(Path(td)))
 
             cb._classify_post_send_seam = lambda **_: SeamClassification(
                 seam_reason_code="FAILED_ADAPTER_RESULT_INVALID",
@@ -633,7 +643,7 @@ class DaemonRunnerV013Tests(unittest.TestCase):
                 )
 
             with patch.dict(os.environ, {"KINFLOW_OC_SENDFN_MODE": "test_stub"}, clear=False):
-                cb = DispatchCallbacks(store, lambda e: events.append(e), oc_adapter=build_oc_adapter_binding(evt0002_send))
+                cb = DispatchCallbacks(store, lambda e: events.append(e), oc_adapter=build_oc_adapter_binding(evt0002_send), cfg=_test_runner_cfg(Path(td)))
             self.assertFalse(cb.process_candidate(cb.list_candidates()[0]))
             seam_evt = [e for e in events if e.get("event") == "adapter_seam_failure_classified"][-1]
             self.assertEqual(seam_evt.get("seam_branch"), "B")
@@ -648,6 +658,151 @@ class DaemonRunnerV013Tests(unittest.TestCase):
             self.assertIsNone(row["provider_ref"])
             self.assertIsNone(row["provider_status_code"])
             self.assertEqual(row["delivery_confidence"], "none")
+
+    def test_v24_accept_mode_assignment_for_non_verifiable_accepted_like(self) -> None:
+        from scripts.daemon_run import DispatchCallbacks, build_oc_adapter_binding
+        from src.ctx002_v0.models import DeliveryTarget, Event, Reminder
+        from src.ctx002_v0.oc_adapter import OpenClawSendResponseNormalized
+        from src.ctx002_v0.persistence.store import SqliteStateStore
+
+        events: list[dict[str, object]] = []
+        with tempfile.TemporaryDirectory() as td:
+            db = Path(td) / "runtime.sqlite"
+            store = SqliteStateStore.from_path(str(db))
+            store.save_delivery_target(
+                DeliveryTarget(person_id="p1", channel="whatsapp", target_id="15551234567", timezone="UTC")
+            )
+            store.save_new_event(
+                Event(
+                    event_id="evt-v24-1",
+                    version=1,
+                    title="wa",
+                    start_at_local=datetime.now(UTC) + timedelta(hours=1),
+                    timezone="UTC",
+                    participants=("p1",),
+                    audience=("p1",),
+                    reminder_offset_minutes=5,
+                    source_message_ref="msg-v24-1",
+                )
+            )
+            store.save_reminder(
+                Reminder(
+                    reminder_id="rem-v24-1",
+                    dedupe_key="k-v24-1",
+                    event_id="evt-v24-1",
+                    event_version=1,
+                    recipient_id="p1",
+                    trigger_at_utc=datetime.now(UTC) - timedelta(minutes=1),
+                    offset_minutes=5,
+                    status="scheduled",
+                )
+            )
+
+            def accepted_like_send(_msg):
+                return OpenClawSendResponseNormalized(
+                    normalized_outcome_class="success",
+                    provider_status_code="ok",
+                    provider_receipt_ref="att-local-nonverifiable",
+                    provider_error_class_hint=None,
+                    provider_error_message_sanitized=None,
+                    provider_confirmation_strength="confirmed",
+                    raw_observed_at_utc=datetime.now(UTC),
+                )
+
+            cfg = _test_runner_cfg(Path(td)).__class__(
+                **{**_test_runner_cfg(Path(td)).__dict__, "accept_mode_verification_window_sec": 1}
+            )
+            with patch.dict(os.environ, {"KINFLOW_OC_SENDFN_MODE": "test_stub"}, clear=False):
+                cb = DispatchCallbacks(
+                    store,
+                    lambda e: events.append(e),
+                    oc_adapter=build_oc_adapter_binding(accepted_like_send),
+                    cfg=cfg,
+                )
+            self.assertFalse(cb.process_candidate(cb.list_candidates()[0]))
+            row = store.conn.execute(
+                "SELECT status, reason_code FROM delivery_attempts ORDER BY rowid DESC LIMIT 1"
+            ).fetchone()
+            self.assertEqual(row["status"], "failed")
+            self.assertEqual(row["reason_code"], "ACCEPTED_UNVERIFIED")
+            self.assertTrue(any(e.get("event") == "accepted_unverified_assigned" for e in events))
+
+    def test_v24_reconcile_timeout_demotion_and_idempotency(self) -> None:
+        from scripts.daemon_run import DispatchCallbacks, build_oc_adapter_binding
+        from src.ctx002_v0.models import DeliveryTarget, Event, Reminder
+        from src.ctx002_v0.oc_adapter import OpenClawSendResponseNormalized
+        from src.ctx002_v0.persistence.store import SqliteStateStore
+
+        with tempfile.TemporaryDirectory() as td:
+            db = Path(td) / "runtime.sqlite"
+            store = SqliteStateStore.from_path(str(db))
+            store.save_delivery_target(
+                DeliveryTarget(person_id="p1", channel="whatsapp", target_id="15551234567", timezone="UTC")
+            )
+            store.save_new_event(
+                Event(
+                    event_id="evt-v24-2",
+                    version=1,
+                    title="wa",
+                    start_at_local=datetime.now(UTC) + timedelta(hours=1),
+                    timezone="UTC",
+                    participants=("p1",),
+                    audience=("p1",),
+                    reminder_offset_minutes=5,
+                    source_message_ref="msg-v24-2",
+                )
+            )
+            store.save_reminder(
+                Reminder(
+                    reminder_id="rem-v24-2",
+                    dedupe_key="k-v24-2",
+                    event_id="evt-v24-2",
+                    event_version=1,
+                    recipient_id="p1",
+                    trigger_at_utc=datetime.now(UTC) - timedelta(minutes=1),
+                    offset_minutes=5,
+                    status="scheduled",
+                )
+            )
+
+            def accepted_like_send(_msg):
+                return OpenClawSendResponseNormalized(
+                    normalized_outcome_class="success",
+                    provider_status_code="ok",
+                    provider_receipt_ref="att-local-nonverifiable",
+                    provider_error_class_hint=None,
+                    provider_error_message_sanitized=None,
+                    provider_confirmation_strength="confirmed",
+                    raw_observed_at_utc=datetime.now(UTC),
+                )
+
+            cfg = _test_runner_cfg(Path(td)).__class__(
+                **{**_test_runner_cfg(Path(td)).__dict__, "accept_mode_verification_window_sec": 1}
+            )
+            with patch.dict(os.environ, {"KINFLOW_OC_SENDFN_MODE": "test_stub"}, clear=False):
+                cb = DispatchCallbacks(
+                    store,
+                    lambda _e: None,
+                    oc_adapter=build_oc_adapter_binding(accepted_like_send),
+                    cfg=cfg,
+                )
+            self.assertFalse(cb.process_candidate(cb.list_candidates()[0]))
+            store.conn.execute(
+                "UPDATE delivery_attempts SET attempted_at_utc=? WHERE reason_code='ACCEPTED_UNVERIFIED'",
+                ((datetime.now(UTC) - timedelta(seconds=10)).isoformat(),),
+            )
+            store.conn.commit()
+            self.assertTrue(cb.run_reconcile())
+            row = store.conn.execute(
+                "SELECT reason_code, status FROM delivery_attempts ORDER BY rowid DESC LIMIT 1"
+            ).fetchone()
+            self.assertEqual(row["reason_code"], "FAILED_ACCEPTED_UNVERIFIED_TIMEOUT")
+            self.assertEqual(row["status"], "failed")
+            self.assertTrue(cb.run_reconcile())
+            demote_events = store.conn.execute(
+                "SELECT COUNT(*) AS n FROM audit_log WHERE payload_json LIKE '%transition_type=DEMOTE_TIMEOUT%'"
+            ).fetchone()["n"]
+            self.assertEqual(demote_events, 1)
 
     def test_adversarial_c_replay_routes_to_unmappable(self) -> None:
         from scripts.daemon_run import DispatchCallbacks, build_oc_adapter_binding
@@ -698,7 +853,7 @@ class DaemonRunnerV013Tests(unittest.TestCase):
                 )
 
             with patch.dict(os.environ, {"KINFLOW_OC_SENDFN_MODE": "test_stub"}, clear=False):
-                cb = DispatchCallbacks(store, lambda _e: None, oc_adapter=build_oc_adapter_binding(valid_send))
+                cb = DispatchCallbacks(store, lambda _e: None, oc_adapter=build_oc_adapter_binding(valid_send), cfg=_test_runner_cfg(Path(td)))
 
             result = cb._route_post_send_failure(
                 reminder=reminder,
