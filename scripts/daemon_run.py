@@ -933,7 +933,7 @@ class DispatchCallbacks:
             return SeamClassification(
                 seam_reason_code=SEAM_REASON_BY_BRANCH["B"],
                 adapter_result_present=True,
-                adapter_result_valid=True,
+                adapter_result_valid=False,
                 evidence_ok=False,
                 seam_branch="B",
                 token_origin_stage=normalized_origin,
@@ -942,7 +942,7 @@ class DispatchCallbacks:
         return SeamClassification(
             seam_reason_code=SEAM_REASON_BY_BRANCH["B"],
             adapter_result_present=True,
-            adapter_result_valid=True,
+            adapter_result_valid=False,
             evidence_ok=evidence_ok,
             seam_branch="B",
             token_origin_stage=normalized_origin,
@@ -960,6 +960,29 @@ class DispatchCallbacks:
                 "run_summary_visibility": True,
             }
         )
+
+    def _validate_errata_invariants(self, classification: SeamClassification, *, reminder_id: str) -> None:
+        violates_b = classification.seam_branch == "B" and classification.adapter_result_valid is not False
+        violates_c = classification.seam_branch == "C" and classification.adapter_result_valid is not True
+        if not (violates_b or violates_c):
+            return
+        payload = {
+            "reminder_id": reminder_id,
+            "seam_branch": classification.seam_branch,
+            "adapter_result_valid": classification.adapter_result_valid,
+            "token_origin_stage": classification.token_origin_stage,
+            "classification_version": SEAM_CLASSIFICATION_VERSION,
+        }
+        self._escalate_contract_integrity_fail(reason="ERRATA_E1_INVARIANT_VIOLATION", payload=payload)
+        raise RunnerExit("ADAPTER_ALIGNMENT_SEAM_GAP", "CONTRACT_INTEGRITY_FAIL")
+
+    @staticmethod
+    def _discard_provider_fields_for_seam() -> dict[str, Any]:
+        return {
+            "provider_ref": None,
+            "provider_status_code": None,
+            "delivery_confidence": "none",
+        }
 
     def _route_post_send_failure(
         self,
@@ -986,29 +1009,22 @@ class DispatchCallbacks:
             fail_token=fail_token,
             token_origin_stage=normalized_origin,
         )
-        if classification.seam_branch == "NONE" and classification.seam_reason_code in {
-            ReasonCode.FAILED_ADAPTER_RESULT_MISSING.value,
-            ReasonCode.FAILED_ADAPTER_RESULT_INVALID.value,
-            ReasonCode.FAILED_ADAPTER_RESULT_UNMAPPABLE.value,
-        }:
+        self._validate_errata_invariants(classification, reminder_id=reminder.reminder_id)
+        if classification.seam_branch == "NONE":
             self._escalate_contract_integrity_fail(
-                reason="SEAM_BRANCH_NONE_WITH_SEAM_CODE",
+                reason="SEAM_BRANCH_NONE_IN_POST_SEND_FAILURE",
                 payload={
                     "reminder_id": reminder.reminder_id,
-                    "seam_branch": classification.seam_branch,
-                    "seam_reason_code": classification.seam_reason_code,
+                    "token_origin_stage": classification.token_origin_stage,
+                    "classification_version": SEAM_CLASSIFICATION_VERSION,
                 },
             )
+            raise RunnerExit("ADAPTER_ALIGNMENT_SEAM_GAP", "CONTRACT_INTEGRITY_FAIL")
 
+        # E2 ordering: discard provider fields -> assign seam consequence -> build output -> persist -> emit event.
+        provider_discarded = self._discard_provider_fields_for_seam()
         seam_reason_code = classification.seam_reason_code or ReasonCode.FAILED_ADAPTER_RESULT_UNMAPPABLE.value
-        adapter_fields_present = False
-        if adapter_result is not None:
-            adapter_fields_present = any(
-                getattr(adapter_result, field, None) is not None
-                for field in ("provider_receipt_ref", "provider_status_code", "provider_error_text")
-            )
-
-        emit_payload = {
+        seam_output = {
             "attempt_id": attempt_id or f"att-{reminder.reminder_id}-{max(reminder.attempts, 1)}",
             "reminder_id": reminder.reminder_id,
             "path_id": path_id,
@@ -1020,35 +1036,35 @@ class DispatchCallbacks:
             "evidence_ok": classification.evidence_ok,
             "terminal_decision": "BLOCK",
             "reason_code": seam_reason_code,
-            "unexpected_provider_fields_present": adapter_fields_present,
+            "unexpected_provider_fields_present": False,
             "classification_version": SEAM_CLASSIFICATION_VERSION,
+            "provider_ref": provider_discarded["provider_ref"],
+            "provider_status_code": provider_discarded["provider_status_code"],
+            "delivery_confidence": provider_discarded["delivery_confidence"],
             "contract_integrity_fail_total": self.contract_integrity_fail_total,
         }
-        self.emit({"event": "adapter_seam_failure_classified", **emit_payload})
-        if adapter_fields_present:
-            self._escalate_contract_integrity_fail(
-                reason="UNEXPECTED_PROVIDER_FIELDS_PRESENT",
-                payload=emit_payload,
-            )
 
         self._persist_non_terminal_failure(
             reminder,
             seam_reason_code,
             str(fail_token or (adapter_exception and str(adapter_exception)) or seam_reason_code),
             now,
-            attempt_id=attempt_id,
+            attempt_id=seam_output["attempt_id"],
         )
         self._append_delivery_audit(
             reminder.reminder_id,
             ReasonCode(seam_reason_code),
             (
-                f"attempt_id={emit_payload['attempt_id']};reminder_id={reminder.reminder_id};path_id={path_id};"
+                f"attempt_id={seam_output['attempt_id']};reminder_id={reminder.reminder_id};path_id={path_id};"
                 f"fail_token={fail_token};token_origin_stage={classification.token_origin_stage};"
                 f"adapter_result_present={classification.adapter_result_present};"
                 f"adapter_result_valid={classification.adapter_result_valid};evidence_ok={classification.evidence_ok};"
-                f"seam_branch={classification.seam_branch};terminal_decision=BLOCK;reason_code={seam_reason_code}"
+                f"seam_branch={classification.seam_branch};terminal_decision=BLOCK;reason_code={seam_reason_code};"
+                f"provider_ref={seam_output['provider_ref']};provider_status_code={seam_output['provider_status_code']};"
+                f"delivery_confidence={seam_output['delivery_confidence']}"
             ),
         )
+        self.emit({"event": "adapter_seam_failure_classified", **seam_output})
         return False
 
     def _append_delivery_audit(self, reminder_id: str, reason_code: ReasonCode, payload: str) -> None:

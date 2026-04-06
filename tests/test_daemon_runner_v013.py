@@ -396,6 +396,259 @@ class DaemonRunnerV013Tests(unittest.TestCase):
             self.assertEqual(seam_evt.get("token_origin_stage"), "POST_ADAPTER")
             self.assertEqual(seam_evt.get("seam_branch"), "A")
 
+    def test_errata_t1_contradiction_guard_branch_b_has_valid_false(self) -> None:
+        from scripts.daemon_run import DispatchCallbacks, build_oc_adapter_binding
+        from src.ctx002_v0.models import DeliveryTarget, Event, Reminder
+        from src.ctx002_v0.oc_adapter import OpenClawSendResponseNormalized
+        from src.ctx002_v0.persistence.store import SqliteStateStore
+
+        events: list[dict[str, object]] = []
+        with tempfile.TemporaryDirectory() as td:
+            db = Path(td) / "runtime.sqlite"
+            store = SqliteStateStore.from_path(str(db))
+            store.save_delivery_target(
+                DeliveryTarget(person_id="p1", channel="whatsapp", target_id="15551234567", timezone="UTC")
+            )
+            store.save_new_event(
+                Event(
+                    event_id="evt-errata-t1",
+                    version=1,
+                    title="wa",
+                    start_at_local=datetime.now(UTC) + timedelta(hours=1),
+                    timezone="UTC",
+                    participants=("p1",),
+                    audience=("p1",),
+                    reminder_offset_minutes=5,
+                    source_message_ref="msg-errata-t1",
+                )
+            )
+            store.save_reminder(
+                Reminder(
+                    reminder_id="rem-errata-t1",
+                    dedupe_key="k-errata-t1",
+                    event_id="evt-errata-t1",
+                    event_version=1,
+                    recipient_id="p1",
+                    trigger_at_utc=datetime.now(UTC) - timedelta(minutes=1),
+                    offset_minutes=5,
+                    status="scheduled",
+                )
+            )
+
+            def bad_send(_msg):
+                return OpenClawSendResponseNormalized(
+                    normalized_outcome_class="success",
+                    provider_status_code=None,
+                    provider_receipt_ref="wamid.any",
+                    provider_error_class_hint=None,
+                    provider_error_message_sanitized=None,
+                    provider_confirmation_strength="confirmed",
+                    raw_observed_at_utc=datetime.now(UTC),
+                )
+
+            with patch.dict(os.environ, {"KINFLOW_OC_SENDFN_MODE": "test_stub"}, clear=False):
+                cb = DispatchCallbacks(store, lambda e: events.append(e), oc_adapter=build_oc_adapter_binding(bad_send))
+            ok = cb.process_candidate(cb.list_candidates()[0])
+            self.assertFalse(ok)
+            seam_evt = [e for e in events if e.get("event") == "adapter_seam_failure_classified"][-1]
+            self.assertEqual(seam_evt.get("seam_branch"), "B")
+            self.assertFalse(seam_evt.get("adapter_result_valid"))
+
+    def test_errata_t2_provider_discard_ordering(self) -> None:
+        from scripts.daemon_run import DispatchCallbacks, build_oc_adapter_binding
+        from src.ctx002_v0.models import DeliveryTarget, Event, Reminder
+        from src.ctx002_v0.oc_adapter import OpenClawSendResponseNormalized
+        from src.ctx002_v0.persistence.store import SqliteStateStore
+
+        events: list[dict[str, object]] = []
+        with tempfile.TemporaryDirectory() as td:
+            db = Path(td) / "runtime.sqlite"
+            store = SqliteStateStore.from_path(str(db))
+            store.save_delivery_target(
+                DeliveryTarget(person_id="p1", channel="whatsapp", target_id="15551234567", timezone="UTC")
+            )
+            store.save_new_event(
+                Event(
+                    event_id="evt-errata-t2",
+                    version=1,
+                    title="wa",
+                    start_at_local=datetime.now(UTC) + timedelta(hours=1),
+                    timezone="UTC",
+                    participants=("p1",),
+                    audience=("p1",),
+                    reminder_offset_minutes=5,
+                    source_message_ref="msg-errata-t2",
+                )
+            )
+            store.save_reminder(
+                Reminder(
+                    reminder_id="rem-errata-t2",
+                    dedupe_key="k-errata-t2",
+                    event_id="evt-errata-t2",
+                    event_version=1,
+                    recipient_id="p1",
+                    trigger_at_utc=datetime.now(UTC) - timedelta(minutes=1),
+                    offset_minutes=5,
+                    status="scheduled",
+                )
+            )
+
+            def bad_send(_msg):
+                return OpenClawSendResponseNormalized(
+                    normalized_outcome_class="success",
+                    provider_status_code=None,
+                    provider_receipt_ref="wamid.any",
+                    provider_error_class_hint=None,
+                    provider_error_message_sanitized=None,
+                    provider_confirmation_strength="confirmed",
+                    raw_observed_at_utc=datetime.now(UTC),
+                )
+
+            with patch.dict(os.environ, {"KINFLOW_OC_SENDFN_MODE": "test_stub"}, clear=False):
+                cb = DispatchCallbacks(store, lambda e: events.append(e), oc_adapter=build_oc_adapter_binding(bad_send))
+            self.assertFalse(cb.process_candidate(cb.list_candidates()[0]))
+            row = store.conn.execute(
+                "SELECT provider_ref, provider_status_code, delivery_confidence FROM delivery_attempts ORDER BY rowid DESC LIMIT 1"
+            ).fetchone()
+            self.assertIsNone(row["provider_ref"])
+            self.assertIsNone(row["provider_status_code"])
+            self.assertEqual(row["delivery_confidence"], "none")
+            seam_evt = [e for e in events if e.get("event") == "adapter_seam_failure_classified"][-1]
+            self.assertIsNone(seam_evt.get("provider_ref"))
+            self.assertIsNone(seam_evt.get("provider_status_code"))
+            self.assertEqual(seam_evt.get("delivery_confidence"), "none")
+            self.assertFalse(seam_evt.get("unexpected_provider_fields_present"))
+
+    def test_errata_t3_fail_fast_on_invariant_violation(self) -> None:
+        from scripts.daemon_run import DispatchCallbacks, RunnerExit, SeamClassification, build_oc_adapter_binding
+        from src.ctx002_v0.models import DeliveryTarget, Event, Reminder
+        from src.ctx002_v0.persistence.store import SqliteStateStore
+
+        events: list[dict[str, object]] = []
+        with tempfile.TemporaryDirectory() as td:
+            db = Path(td) / "runtime.sqlite"
+            store = SqliteStateStore.from_path(str(db))
+            store.save_delivery_target(
+                DeliveryTarget(person_id="p1", channel="whatsapp", target_id="15551234567", timezone="UTC")
+            )
+            store.save_new_event(
+                Event(
+                    event_id="evt-errata-t3",
+                    version=1,
+                    title="wa",
+                    start_at_local=datetime.now(UTC) + timedelta(hours=1),
+                    timezone="UTC",
+                    participants=("p1",),
+                    audience=("p1",),
+                    reminder_offset_minutes=5,
+                    source_message_ref="msg-errata-t3",
+                )
+            )
+            reminder = Reminder(
+                reminder_id="rem-errata-t3",
+                dedupe_key="k-errata-t3",
+                event_id="evt-errata-t3",
+                event_version=1,
+                recipient_id="p1",
+                trigger_at_utc=datetime.now(UTC) - timedelta(minutes=1),
+                offset_minutes=5,
+                status="scheduled",
+            )
+            store.save_reminder(reminder)
+
+            with patch.dict(os.environ, {"KINFLOW_OC_SENDFN_MODE": "test_stub"}, clear=False):
+                cb = DispatchCallbacks(store, lambda e: events.append(e), oc_adapter=build_oc_adapter_binding())
+
+            cb._classify_post_send_seam = lambda **_: SeamClassification(
+                seam_reason_code="FAILED_ADAPTER_RESULT_INVALID",
+                adapter_result_present=True,
+                adapter_result_valid=True,
+                evidence_ok=False,
+                seam_branch="B",
+                token_origin_stage="POST_ADAPTER",
+            )
+            with self.assertRaises(RunnerExit):
+                cb._route_post_send_failure(
+                    reminder=reminder,
+                    now=datetime.now(UTC),
+                    path_id="whatsapp-daemon",
+                    fail_token="DELIVERED_WITHOUT_ADAPTER_RESULT",
+                    token_origin_stage="POST_ADAPTER",
+                    adapter_result=None,
+                    adapter_exception=None,
+                    attempt_id="att-rem-errata-t3-1",
+                )
+            attempts = store.conn.execute("SELECT COUNT(*) AS n FROM delivery_attempts").fetchone()["n"]
+            self.assertEqual(attempts, 0)
+            self.assertTrue(any(e.get("event") == "CONTRACT_INTEGRITY_FAIL" for e in events))
+
+    def test_errata_t4_evt0002_replay_no_contradiction(self) -> None:
+        from scripts.daemon_run import DispatchCallbacks, build_oc_adapter_binding
+        from src.ctx002_v0.models import DeliveryTarget, Event, Reminder
+        from src.ctx002_v0.oc_adapter import OpenClawSendResponseNormalized
+        from src.ctx002_v0.persistence.store import SqliteStateStore
+
+        events: list[dict[str, object]] = []
+        with tempfile.TemporaryDirectory() as td:
+            db = Path(td) / "runtime.sqlite"
+            store = SqliteStateStore.from_path(str(db))
+            store.save_delivery_target(
+                DeliveryTarget(person_id="p1", channel="whatsapp", target_id="15551234567", timezone="UTC")
+            )
+            store.save_new_event(
+                Event(
+                    event_id="evt-0002",
+                    version=1,
+                    title="wa",
+                    start_at_local=datetime.now(UTC) + timedelta(hours=1),
+                    timezone="UTC",
+                    participants=("p1",),
+                    audience=("p1",),
+                    reminder_offset_minutes=5,
+                    source_message_ref="msg-evt-0002",
+                )
+            )
+            store.save_reminder(
+                Reminder(
+                    reminder_id="rem-evt-0002",
+                    dedupe_key="k-evt-0002",
+                    event_id="evt-0002",
+                    event_version=1,
+                    recipient_id="p1",
+                    trigger_at_utc=datetime.now(UTC) - timedelta(minutes=1),
+                    offset_minutes=5,
+                    status="scheduled",
+                )
+            )
+
+            def evt0002_send(_msg):
+                return OpenClawSendResponseNormalized(
+                    normalized_outcome_class="success",
+                    provider_status_code=None,
+                    provider_receipt_ref="wamid.leaky",
+                    provider_error_class_hint=None,
+                    provider_error_message_sanitized=None,
+                    provider_confirmation_strength="confirmed",
+                    raw_observed_at_utc=datetime.now(UTC),
+                )
+
+            with patch.dict(os.environ, {"KINFLOW_OC_SENDFN_MODE": "test_stub"}, clear=False):
+                cb = DispatchCallbacks(store, lambda e: events.append(e), oc_adapter=build_oc_adapter_binding(evt0002_send))
+            self.assertFalse(cb.process_candidate(cb.list_candidates()[0]))
+            seam_evt = [e for e in events if e.get("event") == "adapter_seam_failure_classified"][-1]
+            self.assertEqual(seam_evt.get("seam_branch"), "B")
+            self.assertFalse(seam_evt.get("adapter_result_valid"))
+            self.assertFalse(seam_evt.get("unexpected_provider_fields_present"))
+            self.assertEqual(seam_evt.get("terminal_decision"), "BLOCK")
+            row = store.conn.execute(
+                "SELECT status, reason_code, provider_ref, provider_status_code, delivery_confidence FROM delivery_attempts ORDER BY rowid DESC LIMIT 1"
+            ).fetchone()
+            self.assertEqual(row["status"], "failed")
+            self.assertEqual(row["reason_code"], "FAILED_ADAPTER_RESULT_INVALID")
+            self.assertIsNone(row["provider_ref"])
+            self.assertIsNone(row["provider_status_code"])
+            self.assertEqual(row["delivery_confidence"], "none")
+
     def test_adversarial_c_replay_routes_to_unmappable(self) -> None:
         from scripts.daemon_run import DispatchCallbacks, build_oc_adapter_binding
         from src.ctx002_v0.models import DeliveryTarget, Event, Reminder
