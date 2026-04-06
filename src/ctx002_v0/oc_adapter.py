@@ -196,8 +196,8 @@ class OpenClawGatewayAdapter:
             spec_path = Path(__file__).resolve().parents[2] / "specs" / "KINFLOW_REASON_CODES_CANONICAL.md"
             reason_binding = ReasonCodeBinding(
                 spec_path=str(spec_path),
-                spec_version="v1.0.3",
-                spec_sha256="7aa08628acf0633480c5f496fc632f24226cdfabad8aa8b9c34ab68e37d04742",
+                spec_version="v1.0.5",
+                spec_sha256="f23065f4ee65a764863672b83dd2686d0b2a4373d295ebec4e15e088ba9fea6e",
             )
         validate_reason_code_binding(reason_binding)
 

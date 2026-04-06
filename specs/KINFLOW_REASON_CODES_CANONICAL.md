@@ -4,16 +4,16 @@ installed_by_instruction_id: KINFLOW-R1-REASONCODE-AUDIT-CLOSURE-20260324-001
 run_code: 4353
 installed_utc: 2026-03-24T23:00:00Z
 status: canonical
-version: v1.0.4
+version: v1.0.5
 ---
 
-KINFLOW_REASON_CODES_CANONICAL.md (Master Cut v1.0.4)
+KINFLOW_REASON_CODES_CANONICAL.md (Master Cut v1.0.5)
 # KINFLOW_REASON_CODES_CANONICAL.md
 
-version: v1.0.4
+version: v1.0.5
 status: canonical
 owner: kinflow
-last_updated_utc: 2026-03-29T17:50:00Z
+last_updated_utc: 2026-04-06T13:12:00Z
 
 ## Purpose
 Canonical reason-code registry for Kinflow runtime, adapter, persistence, and audit surfaces.
@@ -197,6 +197,27 @@ Each code includes:
 - class: runtime
 - retry_eligible_default: false
 - terminal_default: false
+- resumable: false
+- resumable_via: none
+
+- FAILED_ADAPTER_RESULT_MISSING
+- class: permanent
+- retry_eligible_default: false
+- terminal_default: true
+- resumable: false
+- resumable_via: none
+
+- FAILED_ADAPTER_RESULT_INVALID
+- class: permanent
+- retry_eligible_default: false
+- terminal_default: true
+- resumable: false
+- resumable_via: none
+
+- FAILED_ADAPTER_RESULT_UNMAPPABLE
+- class: permanent
+- retry_eligible_default: false
+- terminal_default: true
 - resumable: false
 - resumable_via: none
 
@@ -463,6 +484,27 @@ reason_codes:
     class: runtime
     retry_eligible_default: false
     terminal_default: false
+    resumable: false
+    resumable_via: none
+
+  - code: FAILED_ADAPTER_RESULT_MISSING
+    class: permanent
+    retry_eligible_default: false
+    terminal_default: true
+    resumable: false
+    resumable_via: none
+
+  - code: FAILED_ADAPTER_RESULT_INVALID
+    class: permanent
+    retry_eligible_default: false
+    terminal_default: true
+    resumable: false
+    resumable_via: none
+
+  - code: FAILED_ADAPTER_RESULT_UNMAPPABLE
+    class: permanent
+    retry_eligible_default: false
+    terminal_default: true
     resumable: false
     resumable_via: none
 

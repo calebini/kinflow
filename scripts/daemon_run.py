@@ -539,15 +539,42 @@ def build_oc_adapter_binding(send_fn=None) -> OpenClawGatewayAdapter | None:
 
     spec_path = ROOT / "specs" / "KINFLOW_REASON_CODES_CANONICAL.md"
     spec_hash = __import__("hashlib").sha256(spec_path.read_bytes()).hexdigest()
-    binding = ReasonCodeBinding(spec_path=str(spec_path), spec_version="v1.0.3", spec_sha256=spec_hash)
+    binding = ReasonCodeBinding(spec_path=str(spec_path), spec_version="v1.0.5", spec_sha256=spec_hash)
     return OpenClawGatewayAdapter(send_fn=resolved_send_fn, reason_binding=binding)
 
 
-FAIL_TOKEN_REASON_CODE_MAP = {
-    "DISPATCH_ADAPTER_BYPASS_DETECTED": ReasonCode.FAILED_PROVIDER_PERMANENT.value,
-    "DELIVERED_WITHOUT_ADAPTER_RESULT": ReasonCode.FAILED_PROVIDER_PERMANENT.value,
-    "FALLBACK_PATH_USED_WITHOUT_FLAG": ReasonCode.FAILED_PROVIDER_PERMANENT.value,
+SEAM_CLASSIFICATION_VERSION = "adapter-seam-v9"
+TOKEN_ORIGIN_STAGES = {"PRE_SEND", "ADAPTER_EXECUTION", "POST_ADAPTER", "UNKNOWN"}
+POST_SEND_ORIGIN_STAGES = {"ADAPTER_EXECUTION", "POST_ADAPTER", "UNKNOWN"}
+POST_SEND_SEAM_TOKENS = {
+    "DELIVERED_WITHOUT_ADAPTER_RESULT",
+    "FALLBACK_PATH_USED_WITHOUT_FLAG",
+    "DISPATCH_ADAPTER_BYPASS_DETECTED",
 }
+MAPPING_REQUIRED_FIELDS = (
+    "normalized_outcome_class",
+    "provider_confirmation_strength",
+    "provider_status_code",
+    "provider_receipt_ref",
+    "raw_reason_code",
+)
+ALLOWED_NORMALIZED_OUTCOMES = {"success", "transient", "permanent", "blocked", "suppressed", "unknown"}
+ALLOWED_CONFIRMATION_STRENGTHS = {"confirmed", "accepted", "none"}
+SEAM_REASON_BY_BRANCH = {
+    "A": ReasonCode.FAILED_ADAPTER_RESULT_MISSING.value,
+    "B": ReasonCode.FAILED_ADAPTER_RESULT_INVALID.value,
+    "C": ReasonCode.FAILED_ADAPTER_RESULT_UNMAPPABLE.value,
+}
+
+
+@dataclass(frozen=True)
+class SeamClassification:
+    seam_reason_code: str | None
+    adapter_result_present: bool
+    adapter_result_valid: bool
+    evidence_ok: bool
+    seam_branch: str
+    token_origin_stage: str
 
 
 class DispatchCallbacks:
@@ -565,6 +592,7 @@ class DispatchCallbacks:
         self.oc_adapter = oc_adapter
         self.allow_fallback = allow_fallback
         self.force_bypass = force_bypass
+        self.contract_integrity_fail_total = 0
 
     def list_candidates(self) -> list[dict[str, Any]]:
         due = self.store.list_due_reminders(datetime.now(UTC), limit=100)
@@ -587,11 +615,32 @@ class DispatchCallbacks:
 
         if target.channel == "whatsapp":
             if self.force_bypass:
-                return self._fail_token_consequence("DISPATCH_ADAPTER_BYPASS_DETECTED", reminder, "whatsapp-daemon", now)
+                return self._route_post_send_failure(
+                    reminder=reminder,
+                    now=now,
+                    path_id="whatsapp-daemon",
+                    fail_token="DISPATCH_ADAPTER_BYPASS_DETECTED",
+                    token_origin_stage="POST_ADAPTER",
+                    adapter_result=None,
+                    adapter_exception=None,
+                )
             if self.oc_adapter is None:
                 if not self.allow_fallback:
-                    return self._fail_token_consequence("FALLBACK_PATH_USED_WITHOUT_FLAG", reminder, "whatsapp-daemon", now)
-                return self._persist_non_terminal_failure(reminder, ReasonCode.FAILED_CONFIG_INVALID_TARGET.value, "fallback send disabled", now)
+                    return self._route_post_send_failure(
+                        reminder=reminder,
+                        now=now,
+                        path_id="whatsapp-daemon",
+                        fail_token="FALLBACK_PATH_USED_WITHOUT_FLAG",
+                        token_origin_stage="POST_ADAPTER",
+                        adapter_result=None,
+                        adapter_exception=None,
+                    )
+                return self._persist_non_terminal_failure(
+                    reminder,
+                    ReasonCode.FAILED_CONFIG_INVALID_TARGET.value,
+                    "fallback send disabled",
+                    now,
+                )
 
             outbound = OutboundMessage(
                 delivery_id=f"dly-{reminder.reminder_id}-{reminder.attempts}",
@@ -609,25 +658,44 @@ class DispatchCallbacks:
                 metadata_json={"daemon_cycle_id": row.get("cycle_id", "unknown")},
                 metadata_schema_version=1,
             )
+            adapter_result = None
+            adapter_exception: Exception | None = None
+            fail_token = None
+            token_origin_stage = "ADAPTER_EXECUTION"
             try:
-                result = self.oc_adapter.send(outbound)
-            except BoundaryFailStopError as exc:
-                self.emit(
-                    {
-                        "event": "dispatch_boundary_fail_stop",
-                        "boundary_code": exc.code,
-                        "reminder_id": reminder.reminder_id,
-                    }
-                )
-                return self._persist_non_terminal_failure(
-                    reminder,
-                    ReasonCode.FAILED_PROVIDER_PERMANENT.value,
-                    exc.code,
-                    now,
+                adapter_result = self.oc_adapter.send(outbound)
+            except Exception as exc:
+                adapter_exception = exc
+                if isinstance(exc, BoundaryFailStopError):
+                    fail_token = exc.code
+                else:
+                    fail_token = "DELIVERED_WITHOUT_ADAPTER_RESULT"
+            if adapter_result is not None and not self._delivered_evidence_ok(adapter_result):
+                fail_token = "DELIVERED_WITHOUT_ADAPTER_RESULT"
+
+            if fail_token is not None or adapter_exception is not None:
+                return self._route_post_send_failure(
+                    reminder=reminder,
+                    now=now,
+                    path_id="whatsapp-daemon",
+                    fail_token=fail_token,
+                    token_origin_stage=token_origin_stage,
+                    adapter_result=adapter_result,
+                    adapter_exception=adapter_exception,
                     attempt_id=outbound.attempt_id,
                 )
-            if not self._delivered_evidence_ok(result):
-                return self._fail_token_consequence("DELIVERED_WITHOUT_ADAPTER_RESULT", reminder, "whatsapp-daemon", now)
+
+            if adapter_result is None:
+                return self._route_post_send_failure(
+                    reminder=reminder,
+                    now=now,
+                    path_id="whatsapp-daemon",
+                    fail_token="DELIVERED_WITHOUT_ADAPTER_RESULT",
+                    token_origin_stage=token_origin_stage,
+                    adapter_result=None,
+                    adapter_exception=None,
+                    attempt_id=outbound.attempt_id,
+                )
 
             reminder.status = "delivered"
             self.store.update_reminder(reminder)
@@ -637,18 +705,22 @@ class DispatchCallbacks:
                 attempt_index=reminder.attempts,
                 attempted_at_utc=now,
                 status="delivered",
-                reason_code=result.reason_code,
-                provider_ref=result.provider_receipt_ref,
-                provider_status_code=result.provider_status_code,
-                provider_error_text=result.provider_error_text,
-                provider_accept_only=result.provider_accept_only,
-                delivery_confidence=result.delivery_confidence,
-                result_at_utc=result.result_at_utc,
-                trace_id=result.trace_id,
-                causation_id=result.causation_id,
-                source_adapter_attempt_id=result.attempt_id,
+                reason_code=adapter_result.reason_code,
+                provider_ref=adapter_result.provider_receipt_ref,
+                provider_status_code=adapter_result.provider_status_code,
+                provider_error_text=adapter_result.provider_error_text,
+                provider_accept_only=adapter_result.provider_accept_only,
+                delivery_confidence=adapter_result.delivery_confidence,
+                result_at_utc=adapter_result.result_at_utc,
+                trace_id=adapter_result.trace_id,
+                causation_id=adapter_result.causation_id,
+                source_adapter_attempt_id=adapter_result.attempt_id,
             )
-            self._append_delivery_audit(reminder.reminder_id, ReasonCode.DELIVERED_SUCCESS, f"adapter_result={result.status};terminal_decision=ALLOW;reason_code={result.reason_code}")
+            self._append_delivery_audit(
+                reminder.reminder_id,
+                ReasonCode.DELIVERED_SUCCESS,
+                f"adapter_result={adapter_result.status};terminal_decision=ALLOW;reason_code={adapter_result.reason_code}",
+            )
             return True
 
         reminder.status = "delivered"
@@ -748,34 +820,234 @@ class DispatchCallbacks:
         )
         return False
 
-    def _fail_token_consequence(self, fail_token: str, reminder: Reminder, path_id: str, now: datetime) -> bool:
-        attempt_id = f"att-{reminder.reminder_id}-{max(reminder.attempts, 1)}"
-        mapped_reason_code = FAIL_TOKEN_REASON_CODE_MAP.get(fail_token)
-        if mapped_reason_code is None:
-            raise RunnerExit("ADAPTER_ALIGNMENT_SEAM_GAP", f"missing fail-token mapping: {fail_token}")
+    @staticmethod
+    def _normalize_token_origin_stage(token_origin_stage: str | None) -> str:
+        if isinstance(token_origin_stage, str):
+            candidate = token_origin_stage.strip().upper()
+            if candidate in TOKEN_ORIGIN_STAGES:
+                return candidate
+        return "ADAPTER_EXECUTION"
+
+    @staticmethod
+    def _result_to_mapping_fields(adapter_result: Any) -> dict[str, Any]:
+        if adapter_result is None:
+            return {}
+
+        status_to_outcome = {
+            "DELIVERED": "success",
+            "FAILED_TRANSIENT": "transient",
+            "FAILED_PERMANENT": "permanent",
+            "BLOCKED": "blocked",
+            "SUPPRESSED": "suppressed",
+        }
+        confidence_to_strength = {
+            "provider_confirmed": "confirmed",
+            "provider_accepted": "accepted",
+            "none": "none",
+        }
+        return {
+            "normalized_outcome_class": status_to_outcome.get(getattr(adapter_result, "status", None), "unknown"),
+            "provider_confirmation_strength": confidence_to_strength.get(
+                getattr(adapter_result, "delivery_confidence", None), "none"
+            ),
+            "provider_status_code": getattr(adapter_result, "provider_status_code", None),
+            "provider_receipt_ref": getattr(adapter_result, "provider_receipt_ref", None),
+            "raw_reason_code": getattr(adapter_result, "reason_code", None),
+        }
+
+    @staticmethod
+    def _mapping_fields_valid(mapping_fields: dict[str, Any]) -> bool:
+        if not mapping_fields:
+            return False
+        if mapping_fields.get("normalized_outcome_class") not in ALLOWED_NORMALIZED_OUTCOMES:
+            return False
+        if mapping_fields.get("provider_confirmation_strength") not in ALLOWED_CONFIRMATION_STRENGTHS:
+            return False
+        if not isinstance(mapping_fields.get("provider_status_code"), (str, type(None))):
+            return False
+        if not isinstance(mapping_fields.get("provider_receipt_ref"), (str, type(None))):
+            return False
+        if not isinstance(mapping_fields.get("raw_reason_code"), (str, type(None))):
+            return False
+        for field in MAPPING_REQUIRED_FIELDS:
+            if field not in mapping_fields:
+                return False
+        return True
+
+    def _classify_post_send_seam(
+        self,
+        *,
+        adapter_result: Any,
+        adapter_exception: Exception | None,
+        fail_token: str | None,
+        token_origin_stage: str | None,
+    ) -> SeamClassification:
+        normalized_origin = self._normalize_token_origin_stage(token_origin_stage)
+        adapter_result_present = adapter_result is not None
+        evidence_ok = bool(adapter_result_present and self._delivered_evidence_ok(adapter_result))
+
+        seam_predicate = bool(adapter_exception is not None or fail_token is not None or not evidence_ok)
+        if not seam_predicate:
+            return SeamClassification(
+                seam_reason_code=None,
+                adapter_result_present=adapter_result_present,
+                adapter_result_valid=adapter_result_present,
+                evidence_ok=evidence_ok,
+                seam_branch="NONE",
+                token_origin_stage=normalized_origin,
+            )
+
+        if adapter_exception is not None or not adapter_result_present:
+            return SeamClassification(
+                seam_reason_code=SEAM_REASON_BY_BRANCH["A"],
+                adapter_result_present=adapter_result_present,
+                adapter_result_valid=False,
+                evidence_ok=evidence_ok,
+                seam_branch="A",
+                token_origin_stage=normalized_origin,
+            )
+
+        mapping_fields = self._result_to_mapping_fields(adapter_result)
+        mapping_valid = self._mapping_fields_valid(mapping_fields)
+        if not mapping_valid:
+            return SeamClassification(
+                seam_reason_code=SEAM_REASON_BY_BRANCH["B"],
+                adapter_result_present=True,
+                adapter_result_valid=False,
+                evidence_ok=evidence_ok,
+                seam_branch="B",
+                token_origin_stage=normalized_origin,
+            )
+
+        if fail_token and fail_token not in POST_SEND_SEAM_TOKENS:
+            return SeamClassification(
+                seam_reason_code=SEAM_REASON_BY_BRANCH["C"],
+                adapter_result_present=True,
+                adapter_result_valid=True,
+                evidence_ok=evidence_ok,
+                seam_branch="C",
+                token_origin_stage=normalized_origin,
+            )
+
+        if not evidence_ok:
+            return SeamClassification(
+                seam_reason_code=SEAM_REASON_BY_BRANCH["B"],
+                adapter_result_present=True,
+                adapter_result_valid=True,
+                evidence_ok=False,
+                seam_branch="B",
+                token_origin_stage=normalized_origin,
+            )
+
+        return SeamClassification(
+            seam_reason_code=SEAM_REASON_BY_BRANCH["B"],
+            adapter_result_present=True,
+            adapter_result_valid=True,
+            evidence_ok=evidence_ok,
+            seam_branch="B",
+            token_origin_stage=normalized_origin,
+        )
+
+    def _escalate_contract_integrity_fail(self, *, reason: str, payload: dict[str, Any]) -> None:
+        self.contract_integrity_fail_total += 1
+        self.emit(
+            {
+                "event": "CONTRACT_INTEGRITY_FAIL",
+                "level": "ERROR",
+                "reason": reason,
+                "contract_integrity_fail_total": self.contract_integrity_fail_total,
+                "payload": payload,
+                "run_summary_visibility": True,
+            }
+        )
+
+    def _route_post_send_failure(
+        self,
+        *,
+        reminder: Reminder,
+        now: datetime,
+        path_id: str,
+        fail_token: str | None,
+        token_origin_stage: str | None,
+        adapter_result: Any,
+        adapter_exception: Exception | None,
+        attempt_id: str | None = None,
+    ) -> bool:
+        normalized_origin = self._normalize_token_origin_stage(token_origin_stage)
+        if normalized_origin not in POST_SEND_ORIGIN_STAGES:
+            raise RunnerExit(
+                "ADAPTER_ALIGNMENT_SEAM_GAP",
+                f"post-send route violation: token_origin_stage={normalized_origin}",
+            )
+
+        classification = self._classify_post_send_seam(
+            adapter_result=adapter_result,
+            adapter_exception=adapter_exception,
+            fail_token=fail_token,
+            token_origin_stage=normalized_origin,
+        )
+        if classification.seam_branch == "NONE" and classification.seam_reason_code in {
+            ReasonCode.FAILED_ADAPTER_RESULT_MISSING.value,
+            ReasonCode.FAILED_ADAPTER_RESULT_INVALID.value,
+            ReasonCode.FAILED_ADAPTER_RESULT_UNMAPPABLE.value,
+        }:
+            self._escalate_contract_integrity_fail(
+                reason="SEAM_BRANCH_NONE_WITH_SEAM_CODE",
+                payload={
+                    "reminder_id": reminder.reminder_id,
+                    "seam_branch": classification.seam_branch,
+                    "seam_reason_code": classification.seam_reason_code,
+                },
+            )
+
+        seam_reason_code = classification.seam_reason_code or ReasonCode.FAILED_ADAPTER_RESULT_UNMAPPABLE.value
+        adapter_fields_present = False
+        if adapter_result is not None:
+            adapter_fields_present = any(
+                getattr(adapter_result, field, None) is not None
+                for field in ("provider_receipt_ref", "provider_status_code", "provider_error_text")
+            )
+
+        emit_payload = {
+            "attempt_id": attempt_id or f"att-{reminder.reminder_id}-{max(reminder.attempts, 1)}",
+            "reminder_id": reminder.reminder_id,
+            "path_id": path_id,
+            "fail_token": fail_token,
+            "token_origin_stage": classification.token_origin_stage,
+            "seam_branch": classification.seam_branch,
+            "adapter_result_present": classification.adapter_result_present,
+            "adapter_result_valid": classification.adapter_result_valid,
+            "evidence_ok": classification.evidence_ok,
+            "terminal_decision": "BLOCK",
+            "reason_code": seam_reason_code,
+            "unexpected_provider_fields_present": adapter_fields_present,
+            "classification_version": SEAM_CLASSIFICATION_VERSION,
+            "contract_integrity_fail_total": self.contract_integrity_fail_total,
+        }
+        self.emit({"event": "adapter_seam_failure_classified", **emit_payload})
+        if adapter_fields_present:
+            self._escalate_contract_integrity_fail(
+                reason="UNEXPECTED_PROVIDER_FIELDS_PRESENT",
+                payload=emit_payload,
+            )
 
         self._persist_non_terminal_failure(
             reminder,
-            mapped_reason_code,
-            fail_token,
+            seam_reason_code,
+            str(fail_token or (adapter_exception and str(adapter_exception)) or seam_reason_code),
             now,
             attempt_id=attempt_id,
         )
         self._append_delivery_audit(
             reminder.reminder_id,
-            ReasonCode(mapped_reason_code),
-            f"attempt_id={attempt_id};reminder_id={reminder.reminder_id};path_id={path_id};fail_token={fail_token};terminal_decision=BLOCK",
-        )
-        self.emit(
-            {
-                "event": "dispatch_fail_token",
-                "attempt_id": attempt_id,
-                "fail_token": fail_token,
-                "mapped_reason_code": mapped_reason_code,
-                "reminder_id": reminder.reminder_id,
-                "path_id": path_id,
-                "terminal_decision": "BLOCK",
-            }
+            ReasonCode(seam_reason_code),
+            (
+                f"attempt_id={emit_payload['attempt_id']};reminder_id={reminder.reminder_id};path_id={path_id};"
+                f"fail_token={fail_token};token_origin_stage={classification.token_origin_stage};"
+                f"adapter_result_present={classification.adapter_result_present};"
+                f"adapter_result_valid={classification.adapter_result_valid};evidence_ok={classification.evidence_ok};"
+                f"seam_branch={classification.seam_branch};terminal_decision=BLOCK;reason_code={seam_reason_code}"
+            ),
         )
         return False
 

@@ -297,6 +297,7 @@ class DaemonRunnerV013Tests(unittest.TestCase):
             ).fetchone()
             self.assertIsNone(row["provider_status_code"])
             self.assertEqual(row["status"], "failed")
+            self.assertEqual(row["reason_code"], "FAILED_ADAPTER_RESULT_INVALID")
 
     def test_pf04_fail_token_consequence_on_bypass(self) -> None:
         from scripts.daemon_run import DispatchCallbacks, build_oc_adapter_binding
@@ -340,7 +341,7 @@ class DaemonRunnerV013Tests(unittest.TestCase):
                 "SELECT status, reason_code FROM delivery_attempts ORDER BY rowid DESC LIMIT 1"
             ).fetchone()
             self.assertEqual(attempt_row["status"], "failed")
-            self.assertEqual(attempt_row["reason_code"], "FAILED_PROVIDER_PERMANENT")
+            self.assertEqual(attempt_row["reason_code"], "FAILED_ADAPTER_RESULT_MISSING")
 
             audit_payload = store.conn.execute(
                 "SELECT payload_json FROM audit_log ORDER BY audit_index DESC LIMIT 1"
@@ -350,6 +351,136 @@ class DaemonRunnerV013Tests(unittest.TestCase):
             self.assertIn("path_id=whatsapp-daemon", audit_payload)
             self.assertIn("fail_token=DISPATCH_ADAPTER_BYPASS_DETECTED", audit_payload)
             self.assertIn("terminal_decision=BLOCK", audit_payload)
+
+    def test_token_origin_fail_closed_normalizes_to_adapter_execution(self) -> None:
+        from scripts.daemon_run import DispatchCallbacks, build_oc_adapter_binding
+        from src.ctx002_v0.models import DeliveryTarget, Event, Reminder
+        from src.ctx002_v0.persistence.store import SqliteStateStore
+
+        events: list[dict[str, object]] = []
+        with tempfile.TemporaryDirectory() as td:
+            db = Path(td) / "runtime.sqlite"
+            store = SqliteStateStore.from_path(str(db))
+            store.save_delivery_target(
+                DeliveryTarget(person_id="p1", channel="whatsapp", target_id="15551234567", timezone="UTC")
+            )
+            store.save_new_event(
+                Event(
+                    event_id="evt-v9-1",
+                    version=1,
+                    title="wa",
+                    start_at_local=datetime.now(UTC) + timedelta(hours=1),
+                    timezone="UTC",
+                    participants=("p1",),
+                    audience=("p1",),
+                    reminder_offset_minutes=5,
+                    source_message_ref="msg-v9-1",
+                )
+            )
+            reminder = Reminder(
+                reminder_id="rem-v9-1",
+                dedupe_key="k-v9-1",
+                event_id="evt-v9-1",
+                event_version=1,
+                recipient_id="p1",
+                trigger_at_utc=datetime.now(UTC) - timedelta(minutes=1),
+                offset_minutes=5,
+                status="scheduled",
+            )
+            store.save_reminder(reminder)
+            with patch.dict(os.environ, {"KINFLOW_OC_SENDFN_MODE": "test_stub"}, clear=False):
+                cb = DispatchCallbacks(store, lambda e: events.append(e), oc_adapter=build_oc_adapter_binding(), force_bypass=True)
+            ok = cb.process_candidate(cb.list_candidates()[0])
+            self.assertFalse(ok)
+            seam_evt = [e for e in events if e.get("event") == "adapter_seam_failure_classified"][-1]
+            self.assertEqual(seam_evt.get("token_origin_stage"), "POST_ADAPTER")
+            self.assertEqual(seam_evt.get("seam_branch"), "A")
+
+    def test_adversarial_c_replay_routes_to_unmappable(self) -> None:
+        from scripts.daemon_run import DispatchCallbacks, build_oc_adapter_binding
+        from src.ctx002_v0.models import DeliveryTarget, Event, Reminder
+        from src.ctx002_v0.oc_adapter import OpenClawSendResponseNormalized, OutboundMessage
+        from src.ctx002_v0.persistence.store import SqliteStateStore
+
+        with tempfile.TemporaryDirectory() as td:
+            db = Path(td) / "runtime.sqlite"
+            store = SqliteStateStore.from_path(str(db))
+            store.save_delivery_target(
+                DeliveryTarget(person_id="p1", channel="whatsapp", target_id="15551234567", timezone="UTC")
+            )
+            store.save_new_event(
+                Event(
+                    event_id="evt-v9-2",
+                    version=1,
+                    title="wa",
+                    start_at_local=datetime.now(UTC) + timedelta(hours=1),
+                    timezone="UTC",
+                    participants=("p1",),
+                    audience=("p1",),
+                    reminder_offset_minutes=5,
+                    source_message_ref="msg-v9-2",
+                )
+            )
+            reminder = Reminder(
+                reminder_id="rem-v9-2",
+                dedupe_key="k-v9-2",
+                event_id="evt-v9-2",
+                event_version=1,
+                recipient_id="p1",
+                trigger_at_utc=datetime.now(UTC) - timedelta(minutes=1),
+                offset_minutes=5,
+                status="scheduled",
+            )
+            store.save_reminder(reminder)
+
+            def valid_send(_msg):
+                return OpenClawSendResponseNormalized(
+                    normalized_outcome_class="success",
+                    provider_status_code="ok",
+                    provider_receipt_ref="wamid.123",
+                    provider_error_class_hint=None,
+                    provider_error_message_sanitized=None,
+                    provider_confirmation_strength="confirmed",
+                    raw_observed_at_utc=datetime.now(UTC),
+                )
+
+            with patch.dict(os.environ, {"KINFLOW_OC_SENDFN_MODE": "test_stub"}, clear=False):
+                cb = DispatchCallbacks(store, lambda _e: None, oc_adapter=build_oc_adapter_binding(valid_send))
+
+            result = cb._route_post_send_failure(
+                reminder=reminder,
+                now=datetime.now(UTC),
+                path_id="whatsapp-daemon",
+                fail_token="UNMAPPED_FAIL_TOKEN",
+                token_origin_stage="unknown-stage",
+                adapter_result=cb.oc_adapter.send(
+                    OutboundMessage(
+                        delivery_id="d1",
+                        attempt_id="a1",
+                        attempt_index=1,
+                        trace_id="t1",
+                        causation_id="c1",
+                        channel_hint="whatsapp",
+                        target_ref="15551234567",
+                        subject_type="event_reminder",
+                        priority="normal",
+                        body_text="hello",
+                        dedupe_key="idem-c",
+                        created_at_utc=datetime.now(UTC),
+                    )
+                ),
+                adapter_exception=None,
+                attempt_id="att-rem-v9-2-1",
+            )
+            self.assertFalse(result)
+            row = store.conn.execute(
+                "SELECT reason_code, status, provider_ref, provider_status_code, delivery_confidence FROM delivery_attempts ORDER BY rowid DESC LIMIT 1"
+            ).fetchone()
+            self.assertEqual(row["status"], "failed")
+            self.assertEqual(row["reason_code"], "FAILED_ADAPTER_RESULT_UNMAPPABLE")
+            self.assertIsNone(row["provider_ref"])
+            self.assertIsNone(row["provider_status_code"])
+            self.assertEqual(row["delivery_confidence"], "none")
 
     def test_pf05_startup_binding_gate_invalid(self) -> None:
         with tempfile.TemporaryDirectory(prefix="kinflow-runner-test-") as td:
