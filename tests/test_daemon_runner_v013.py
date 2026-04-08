@@ -727,6 +727,73 @@ class DaemonRunnerV013Tests(unittest.TestCase):
             self.assertEqual(row["reason_code"], "ACCEPTED_UNVERIFIED")
             self.assertTrue(any(e.get("event") == "accepted_unverified_assigned" for e in events))
 
+    def test_v12_livepath_normalizer_demotes_local_receipt_to_accepted(self) -> None:
+        from scripts.daemon_run import _normalize_gateway_send_response
+
+        normalized = _normalize_gateway_send_response({"messageId": "local:evt-0004"})
+
+        self.assertIsNone(normalized.provider_receipt_ref)
+        self.assertEqual(normalized.provider_confirmation_strength, "accepted")
+        self.assertEqual(normalized.provider_status_code, "ok")
+
+    def test_v12_evt0004_replay_routes_to_accept_mode_not_seam_b(self) -> None:
+        from scripts.daemon_run import DispatchCallbacks, _normalize_gateway_send_response, build_oc_adapter_binding
+        from src.ctx002_v0.models import DeliveryTarget, Event, Reminder
+        from src.ctx002_v0.persistence.store import SqliteStateStore
+
+        events: list[dict[str, object]] = []
+        with tempfile.TemporaryDirectory() as td:
+            db = Path(td) / "runtime.sqlite"
+            store = SqliteStateStore.from_path(str(db))
+            store.save_delivery_target(
+                DeliveryTarget(person_id="caleb", channel="whatsapp", target_id="15551234567", timezone="UTC")
+            )
+            store.save_new_event(
+                Event(
+                    event_id="evt-0004",
+                    version=1,
+                    title="wa",
+                    start_at_local=datetime.now(UTC) + timedelta(hours=1),
+                    timezone="UTC",
+                    participants=("caleb",),
+                    audience=("caleb",),
+                    reminder_offset_minutes=5,
+                    source_message_ref="msg-evt-0004",
+                )
+            )
+            store.save_reminder(
+                Reminder(
+                    reminder_id="rem-evt-0004-v1-caleb-8",
+                    dedupe_key="k-evt-0004",
+                    event_id="evt-0004",
+                    event_version=1,
+                    recipient_id="caleb",
+                    trigger_at_utc=datetime.now(UTC) - timedelta(minutes=1),
+                    offset_minutes=5,
+                    status="scheduled",
+                )
+            )
+
+            def livepath_send(_msg):
+                return _normalize_gateway_send_response({"messageId": "local:evt-0004"})
+
+            with patch.dict(os.environ, {"KINFLOW_OC_SENDFN_MODE": "test_stub"}, clear=False):
+                cb = DispatchCallbacks(
+                    store,
+                    lambda e: events.append(e),
+                    oc_adapter=build_oc_adapter_binding(livepath_send),
+                    cfg=_test_runner_cfg(Path(td)),
+                )
+
+            self.assertFalse(cb.process_candidate(cb.list_candidates()[0]))
+            row = store.conn.execute(
+                "SELECT status, reason_code FROM delivery_attempts ORDER BY rowid DESC LIMIT 1"
+            ).fetchone()
+            self.assertEqual(row["status"], "failed")
+            self.assertEqual(row["reason_code"], "ACCEPTED_UNVERIFIED")
+            self.assertFalse(any(e.get("event") == "adapter_seam_failure_classified" for e in events))
+            self.assertTrue(any(e.get("event") == "accepted_unverified_assigned" for e in events))
+
     def test_v24_reconcile_timeout_demotion_and_idempotency(self) -> None:
         from scripts.daemon_run import DispatchCallbacks, build_oc_adapter_binding
         from src.ctx002_v0.models import DeliveryTarget, Event, Reminder

@@ -420,6 +420,28 @@ def _extract_gateway_call_json(stdout: str) -> dict[str, Any] | None:
     return None
 
 
+NON_VERIFIABLE_RECEIPT_LITERALS = {"none", "null", "n/a", "na", "placeholder", "synthetic"}
+NON_VERIFIABLE_RECEIPT_PREFIXES = ("att-", "rcpt:att-", "local:")
+
+
+def _classify_provider_ref_evidence(provider_ref: str | None) -> str:
+    if provider_ref is None:
+        return "local_non_verifiable"
+    token = provider_ref.strip()
+    if not token:
+        return "local_non_verifiable"
+    lowered = token.lower()
+    if lowered in NON_VERIFIABLE_RECEIPT_LITERALS:
+        return "local_non_verifiable"
+    if lowered.startswith(NON_VERIFIABLE_RECEIPT_PREFIXES):
+        return "local_non_verifiable"
+    return "transport_verifiable"
+
+
+def _provider_ref_transport_meaningful(provider_ref: str | None) -> bool:
+    return _classify_provider_ref_evidence(provider_ref) == "transport_verifiable"
+
+
 def _normalize_gateway_send_response(payload: dict[str, Any]) -> OpenClawSendResponseNormalized:
     # successful gateway send/no transport error -> success
     if not isinstance(payload, dict):
@@ -430,14 +452,10 @@ def _normalize_gateway_send_response(payload: dict[str, Any]) -> OpenClawSendRes
         value = payload.get(key)
         if isinstance(value, str) and value.strip():
             candidate = value.strip()
-            lowered = candidate.lower()
-            if lowered.startswith("att-") or lowered.startswith("rcpt:att-"):
-                provider_receipt_ref = None
-            else:
-                provider_receipt_ref = candidate
+            provider_receipt_ref = candidate if _provider_ref_transport_meaningful(candidate) else None
             break
 
-    provider_confirmation_strength = "confirmed" if provider_receipt_ref else "accepted"
+    provider_confirmation_strength = "confirmed" if _provider_ref_transport_meaningful(provider_receipt_ref) else "accepted"
 
     return OpenClawSendResponseNormalized(
         normalized_outcome_class="success",
@@ -947,22 +965,11 @@ class DispatchCallbacks:
 
     @staticmethod
     def _classify_send_evidence_ref(provider_ref: str | None) -> str:
-        if provider_ref is None:
-            return "local_non_verifiable"
-        token = provider_ref.strip()
-        if not token:
-            return "local_non_verifiable"
-        lowered = token.lower()
-        blocked = {"none", "null", "n/a", "na", "placeholder", "synthetic"}
-        if lowered in blocked:
-            return "local_non_verifiable"
-        if lowered.startswith("att-") or lowered.startswith("rcpt:att-") or lowered.startswith("local:"):
-            return "local_non_verifiable"
-        return "transport_verifiable"
+        return _classify_provider_ref_evidence(provider_ref)
 
     @staticmethod
     def _provider_ref_transport_meaningful(provider_ref: str | None) -> bool:
-        return DispatchCallbacks._classify_send_evidence_ref(provider_ref) == "transport_verifiable"
+        return _provider_ref_transport_meaningful(provider_ref)
 
     def _delivered_evidence_ok(self, result) -> bool:
         if result.reason_code != ReasonCode.DELIVERED_SUCCESS.value:
