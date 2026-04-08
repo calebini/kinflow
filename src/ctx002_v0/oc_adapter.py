@@ -395,27 +395,45 @@ class OpenClawGatewayAdapter:
         outbound: OutboundMessage,
         provider_response: OpenClawSendResponseNormalized,
     ) -> DeliveryResult:
+        if not isinstance(provider_response.provider_status_code, (str, type(None))):
+            raise AdapterContractError("provider_status_code must be string|null")
+        if not isinstance(provider_response.provider_receipt_ref, (str, type(None))):
+            raise AdapterContractError("provider_receipt_ref must be string|null")
+
         source: RetryClassificationSource
-        has_override = (
-            provider_response.provider_status_code is not None
-            and provider_response.provider_status_code in self._policy_override_map
+        confidence = self._derive_confidence(provider_response.provider_confirmation_strength)
+        weak_evidence_trigger = (
+            provider_response.normalized_outcome_class == "success" and confidence == "provider_accepted"
         )
-        if has_override:
-            rule = self._policy_override_map[provider_response.provider_status_code]
-            source = "policy_override"
-        elif provider_response.normalized_outcome_class in self._provider_map:
-            rule = self._provider_map[provider_response.normalized_outcome_class]
+
+        if weak_evidence_trigger:
+            rule = MappingRule(
+                status="DELIVERED",
+                reason_code=ReasonCode.DELIVERED_SUCCESS.value,
+                retry_eligible=False,
+                error_class=None,
+            )
             source = "provider_map"
         else:
-            rule = MappingRule(
-                status="FAILED_TRANSIENT",
-                reason_code=ReasonCode.FAILED_PROVIDER_TRANSIENT.value,
-                retry_eligible=True,
-                error_class="unknown",
+            has_override = (
+                provider_response.provider_status_code is not None
+                and provider_response.provider_status_code in self._policy_override_map
             )
-            source = "fallback_default"
+            if has_override:
+                rule = self._policy_override_map[provider_response.provider_status_code]
+                source = "policy_override"
+            elif provider_response.normalized_outcome_class in self._provider_map:
+                rule = self._provider_map[provider_response.normalized_outcome_class]
+                source = "provider_map"
+            else:
+                rule = MappingRule(
+                    status="FAILED_TRANSIENT",
+                    reason_code=ReasonCode.FAILED_PROVIDER_TRANSIENT.value,
+                    retry_eligible=True,
+                    error_class="unknown",
+                )
+                source = "fallback_default"
 
-        confidence = self._derive_confidence(provider_response.provider_confirmation_strength)
         if rule.status != "DELIVERED":
             confidence = "none"
 
@@ -453,6 +471,13 @@ class OpenClawGatewayAdapter:
             trace_id=outbound.trace_id,
             causation_id=outbound.causation_id,
         )
+        if weak_evidence_trigger and not (
+            result.status == "DELIVERED"
+            and result.reason_code == ReasonCode.DELIVERED_SUCCESS.value
+            and result.delivery_confidence == "provider_accepted"
+            and result.provider_accept_only is True
+        ):
+            raise AdapterContractError("WEAK_EVIDENCE_TUPLE_LOCK_VIOLATION")
         self._validate_result(result)
         return result
 
@@ -524,6 +549,8 @@ class OpenClawGatewayAdapter:
 
         if result.delivery_confidence == "provider_confirmed" and result.provider_accept_only:
             raise AdapterContractError("provider_confirmed requires provider_accept_only=false")
+        if result.delivery_confidence == "provider_accepted" and not result.provider_accept_only:
+            raise AdapterContractError("provider_accepted requires provider_accept_only=true")
         if result.provider_accept_only and not (
             result.status == "DELIVERED" and result.delivery_confidence == "provider_accepted"
         ):

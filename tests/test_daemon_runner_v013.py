@@ -705,7 +705,7 @@ class DaemonRunnerV013Tests(unittest.TestCase):
                     provider_receipt_ref="att-local-nonverifiable",
                     provider_error_class_hint=None,
                     provider_error_message_sanitized=None,
-                    provider_confirmation_strength="confirmed",
+                    provider_confirmation_strength="accepted",
                     raw_observed_at_utc=datetime.now(UTC),
                 )
 
@@ -772,7 +772,7 @@ class DaemonRunnerV013Tests(unittest.TestCase):
                     provider_receipt_ref="att-local-nonverifiable",
                     provider_error_class_hint=None,
                     provider_error_message_sanitized=None,
-                    provider_confirmation_strength="confirmed",
+                    provider_confirmation_strength="accepted",
                     raw_observed_at_utc=datetime.now(UTC),
                 )
 
@@ -803,6 +803,145 @@ class DaemonRunnerV013Tests(unittest.TestCase):
                 "SELECT COUNT(*) AS n FROM audit_log WHERE payload_json LIKE '%transition_type=DEMOTE_TIMEOUT%'"
             ).fetchone()["n"]
             self.assertEqual(demote_events, 1)
+
+    def test_v12_t5_seam_tiebreak_none_for_schema_valid_weak_evidence(self) -> None:
+        from scripts.daemon_run import DispatchCallbacks, build_oc_adapter_binding
+        from src.ctx002_v0.models import DeliveryTarget, Event, Reminder
+        from src.ctx002_v0.oc_adapter import OpenClawSendResponseNormalized, OutboundMessage
+        from src.ctx002_v0.persistence.store import SqliteStateStore
+
+        with tempfile.TemporaryDirectory() as td:
+            db = Path(td) / "runtime.sqlite"
+            store = SqliteStateStore.from_path(str(db))
+            store.save_delivery_target(
+                DeliveryTarget(person_id="p1", channel="whatsapp", target_id="15551234567", timezone="UTC")
+            )
+            store.save_new_event(
+                Event(
+                    event_id="evt-v12-t5",
+                    version=1,
+                    title="wa",
+                    start_at_local=datetime.now(UTC) + timedelta(hours=1),
+                    timezone="UTC",
+                    participants=("p1",),
+                    audience=("p1",),
+                    reminder_offset_minutes=5,
+                    source_message_ref="msg-v12-t5",
+                )
+            )
+            store.save_reminder(
+                Reminder(
+                    reminder_id="rem-v12-t5",
+                    dedupe_key="k-v12-t5",
+                    event_id="evt-v12-t5",
+                    event_version=1,
+                    recipient_id="p1",
+                    trigger_at_utc=datetime.now(UTC) - timedelta(minutes=1),
+                    offset_minutes=5,
+                    status="scheduled",
+                )
+            )
+
+            def weak_send(_msg):
+                return OpenClawSendResponseNormalized(
+                    normalized_outcome_class="success",
+                    provider_status_code=None,
+                    provider_receipt_ref=None,
+                    provider_error_class_hint=None,
+                    provider_error_message_sanitized=None,
+                    provider_confirmation_strength="accepted",
+                    raw_observed_at_utc=datetime.now(UTC),
+                )
+
+            with patch.dict(os.environ, {"KINFLOW_OC_SENDFN_MODE": "test_stub"}, clear=False):
+                cb = DispatchCallbacks(store, lambda _e: None, oc_adapter=build_oc_adapter_binding(weak_send), cfg=_test_runner_cfg(Path(td)))
+            outbound_result = cb.oc_adapter.send(
+                OutboundMessage(
+                    delivery_id="d-t5",
+                    attempt_id="a-t5",
+                    attempt_index=1,
+                    trace_id="trace-t5",
+                    causation_id="cause-t5",
+                    channel_hint="whatsapp",
+                    target_ref="15551234567",
+                    subject_type="event_reminder",
+                    priority="normal",
+                    body_text="probe",
+                    dedupe_key="k-t5",
+                    created_at_utc=datetime.now(UTC),
+                )
+            )
+            cls = cb._classify_post_send_seam(
+                adapter_result=outbound_result,
+                adapter_exception=None,
+                fail_token="DELIVERED_WITHOUT_ADAPTER_RESULT",
+                token_origin_stage="ADAPTER_EXECUTION",
+            )
+            self.assertEqual(cls.seam_branch, "NONE")
+            self.assertTrue(cls.adapter_result_valid)
+
+    def test_v12_t7_contradiction_tripwire_on_tuple_lock_violation(self) -> None:
+        from scripts.daemon_run import DispatchCallbacks, RunnerExit, SeamClassification, build_oc_adapter_binding
+        from src.ctx002_v0.models import DeliveryTarget, Event, Reminder
+        from src.ctx002_v0.persistence.store import SqliteStateStore
+
+        events: list[dict[str, object]] = []
+        with tempfile.TemporaryDirectory() as td:
+            db = Path(td) / "runtime.sqlite"
+            store = SqliteStateStore.from_path(str(db))
+            store.save_delivery_target(
+                DeliveryTarget(person_id="p1", channel="whatsapp", target_id="15551234567", timezone="UTC")
+            )
+            store.save_new_event(
+                Event(
+                    event_id="evt-v12-t7",
+                    version=1,
+                    title="wa",
+                    start_at_local=datetime.now(UTC) + timedelta(hours=1),
+                    timezone="UTC",
+                    participants=("p1",),
+                    audience=("p1",),
+                    reminder_offset_minutes=5,
+                    source_message_ref="msg-v12-t7",
+                )
+            )
+            reminder = Reminder(
+                reminder_id="rem-v12-t7",
+                dedupe_key="k-v12-t7",
+                event_id="evt-v12-t7",
+                event_version=1,
+                recipient_id="p1",
+                trigger_at_utc=datetime.now(UTC) - timedelta(minutes=1),
+                offset_minutes=5,
+                status="scheduled",
+            )
+            store.save_reminder(reminder)
+            with patch.dict(os.environ, {"KINFLOW_OC_SENDFN_MODE": "test_stub"}, clear=False):
+                cb = DispatchCallbacks(store, lambda e: events.append(e), oc_adapter=build_oc_adapter_binding(), cfg=_test_runner_cfg(Path(td)))
+
+            class _BadResult:
+                status = "DELIVERED"
+                reason_code = "DELIVERED_SUCCESS"
+                delivery_confidence = "provider_accepted"
+                provider_accept_only = False
+                provider_status_code = None
+                provider_receipt_ref = None
+                result_at_utc = datetime.now(UTC)
+
+            with self.assertRaises(RunnerExit):
+                cb._validate_v12_weak_evidence_invariants(
+                    adapter_result=_BadResult(),
+                    classification=SeamClassification(
+                        seam_reason_code=None,
+                        adapter_result_present=True,
+                        adapter_result_valid=True,
+                        evidence_ok=False,
+                        seam_branch="NONE",
+                        token_origin_stage="ADAPTER_EXECUTION",
+                    ),
+                    reminder_id=reminder.reminder_id,
+                )
+            self.assertTrue(any(e.get("event") == "CONTRACT_INTEGRITY_FAIL" for e in events))
 
     def test_adversarial_c_replay_routes_to_unmappable(self) -> None:
         from scripts.daemon_run import DispatchCallbacks, build_oc_adapter_binding

@@ -721,6 +721,11 @@ class DispatchCallbacks:
                 fail_token=fail_token,
                 token_origin_stage=token_origin_stage,
             )
+            self._validate_v12_weak_evidence_invariants(
+                adapter_result=adapter_result,
+                classification=classification,
+                reminder_id=reminder.reminder_id,
+            )
             if classification.seam_branch in {"A", "B", "C"}:
                 return self._route_post_send_failure(
                     reminder=reminder,
@@ -972,16 +977,26 @@ class DispatchCallbacks:
             return False
         return True
 
-    def _is_accept_mode_candidate(self, result) -> bool:
+    @staticmethod
+    def _is_weak_evidence_tuple_schema_valid(result: Any) -> bool:
         if result is None:
             return False
-        if result.reason_code != ReasonCode.DELIVERED_SUCCESS.value:
+        if getattr(result, "status", None) != "DELIVERED":
             return False
-        if result.delivery_confidence not in {"provider_confirmed", "provider_accepted"}:
+        if getattr(result, "reason_code", None) != ReasonCode.DELIVERED_SUCCESS.value:
             return False
-        if not result.provider_status_code:
+        if getattr(result, "delivery_confidence", None) != "provider_accepted":
             return False
-        if result.result_at_utc is None:
+        if getattr(result, "provider_accept_only", None) is not True:
+            return False
+        if not isinstance(getattr(result, "provider_status_code", None), (str, type(None))):
+            return False
+        if not isinstance(getattr(result, "provider_receipt_ref", None), (str, type(None))):
+            return False
+        return getattr(result, "result_at_utc", None) is not None
+
+    def _is_accept_mode_candidate(self, result) -> bool:
+        if not self._is_weak_evidence_tuple_schema_valid(result):
             return False
         return not self._provider_ref_transport_meaningful(result.provider_receipt_ref)
 
@@ -1292,6 +1307,48 @@ class DispatchCallbacks:
         self._escalate_contract_integrity_fail(reason="ERRATA_E1_INVARIANT_VIOLATION", payload=payload)
         raise RunnerExit("ADAPTER_ALIGNMENT_SEAM_GAP", "CONTRACT_INTEGRITY_FAIL")
 
+    def _validate_v12_weak_evidence_invariants(
+        self,
+        *,
+        adapter_result: Any,
+        classification: SeamClassification,
+        reminder_id: str,
+    ) -> None:
+        if adapter_result is None:
+            return
+
+        status = getattr(adapter_result, "status", None)
+        confidence = getattr(adapter_result, "delivery_confidence", None)
+        provider_accept_only = getattr(adapter_result, "provider_accept_only", None)
+
+        if status == "DELIVERED" and confidence == "provider_accepted" and provider_accept_only is not True:
+            self._escalate_contract_integrity_fail(
+                reason="V12_WEAK_EVIDENCE_TUPLE_LOCK_VIOLATION",
+                payload={
+                    "reminder_id": reminder_id,
+                    "status": status,
+                    "delivery_confidence": confidence,
+                    "provider_accept_only": provider_accept_only,
+                    "seam_branch": classification.seam_branch,
+                    "adapter_result_valid": classification.adapter_result_valid,
+                },
+            )
+            raise RunnerExit("ADAPTER_ALIGNMENT_SEAM_GAP", "CONTRACT_INTEGRITY_FAIL")
+
+        is_weak_evidence_tuple = self._is_weak_evidence_tuple_schema_valid(adapter_result)
+        if is_weak_evidence_tuple and classification.seam_branch != "NONE":
+            self._escalate_contract_integrity_fail(
+                reason="V12_WEAK_EVIDENCE_SEAM_TIEBREAK_VIOLATION",
+                payload={
+                    "reminder_id": reminder_id,
+                    "seam_branch": classification.seam_branch,
+                    "adapter_result_valid": classification.adapter_result_valid,
+                    "token_origin_stage": classification.token_origin_stage,
+                    "classification_version": SEAM_CLASSIFICATION_VERSION,
+                },
+            )
+            raise RunnerExit("ADAPTER_ALIGNMENT_SEAM_GAP", "CONTRACT_INTEGRITY_FAIL")
+
     @staticmethod
     def _discard_provider_fields_for_seam() -> dict[str, Any]:
         return {
@@ -1324,6 +1381,11 @@ class DispatchCallbacks:
             adapter_exception=adapter_exception,
             fail_token=fail_token,
             token_origin_stage=normalized_origin,
+        )
+        self._validate_v12_weak_evidence_invariants(
+            adapter_result=adapter_result,
+            classification=classification,
+            reminder_id=reminder.reminder_id,
         )
         self._validate_errata_invariants(classification, reminder_id=reminder.reminder_id)
         if classification.seam_branch == "NONE":
