@@ -250,6 +250,131 @@ class DaemonRunnerV013Tests(unittest.TestCase):
             self.assertGreaterEqual(attempts, 1)
             self.assertGreaterEqual(audit, 1)
 
+    def test_whatsapp_body_uses_event_context_and_preserves_delivery_semantics(self) -> None:
+        from scripts.daemon_run import DispatchCallbacks, build_oc_adapter_binding
+        from src.ctx002_v0.models import DeliveryTarget, Event, Reminder
+        from src.ctx002_v0.oc_adapter import OpenClawSendResponseNormalized
+        from src.ctx002_v0.persistence.store import SqliteStateStore
+
+        captured: dict[str, str] = {}
+        with tempfile.TemporaryDirectory() as td:
+            db = Path(td) / "runtime.sqlite"
+            store = SqliteStateStore.from_path(str(db))
+            store.save_delivery_target(
+                DeliveryTarget(person_id="p1", channel="whatsapp", target_id="15551234567", timezone="UTC")
+            )
+            store.save_new_event(
+                Event(
+                    event_id="evt-body-1",
+                    version=1,
+                    title="Canary Title",
+                    start_at_local=datetime(2026, 1, 2, 15, 45, tzinfo=UTC),
+                    timezone="UTC",
+                    participants=("p1",),
+                    audience=("p1",),
+                    reminder_offset_minutes=5,
+                    source_message_ref="msg-body-1",
+                )
+            )
+            store.save_reminder(
+                Reminder(
+                    reminder_id="rem-body-1",
+                    dedupe_key="k-body-1",
+                    event_id="evt-body-1",
+                    event_version=1,
+                    recipient_id="p1",
+                    trigger_at_utc=datetime(2026, 1, 2, 15, 40, tzinfo=UTC),
+                    offset_minutes=5,
+                    status="scheduled",
+                )
+            )
+
+            def send_capture(msg):
+                captured["body_text"] = msg.body_text
+                return OpenClawSendResponseNormalized(
+                    normalized_outcome_class="success",
+                    provider_status_code="ok",
+                    provider_receipt_ref="wamid.body.1",
+                    provider_error_class_hint=None,
+                    provider_error_message_sanitized=None,
+                    provider_confirmation_strength="confirmed",
+                    raw_observed_at_utc=datetime.now(UTC),
+                )
+
+            cb = DispatchCallbacks(store, lambda _e: None, oc_adapter=build_oc_adapter_binding(send_capture), cfg=_test_runner_cfg(Path(td)))
+            ok = cb.process_candidate(cb.list_candidates()[0])
+            self.assertTrue(ok)
+
+            self.assertEqual(captured["body_text"], "Reminder: Canary Title at 2026-01-02 15:45 UTC")
+            self.assertNotIn("A/B lane probe A minimal send", captured["body_text"])
+
+            row = store.conn.execute(
+                "SELECT status, reason_code, provider_ref, provider_status_code, delivery_confidence "
+                "FROM delivery_attempts ORDER BY rowid DESC LIMIT 1"
+            ).fetchone()
+            self.assertEqual(row["status"], "delivered")
+            self.assertEqual(row["reason_code"], "DELIVERED_SUCCESS")
+            self.assertEqual(row["provider_ref"], "wamid.body.1")
+            self.assertEqual(row["provider_status_code"], "ok")
+            self.assertEqual(row["delivery_confidence"], "provider_confirmed")
+
+    def test_whatsapp_body_fallback_when_event_lookup_missing(self) -> None:
+        from scripts.daemon_run import DispatchCallbacks, build_oc_adapter_binding
+        from src.ctx002_v0.models import DeliveryTarget, Event, Reminder
+        from src.ctx002_v0.oc_adapter import OpenClawSendResponseNormalized
+        from src.ctx002_v0.persistence.store import SqliteStateStore
+
+        captured: dict[str, str] = {}
+        with tempfile.TemporaryDirectory() as td:
+            db = Path(td) / "runtime.sqlite"
+            store = SqliteStateStore.from_path(str(db))
+            store.save_delivery_target(
+                DeliveryTarget(person_id="p1", channel="whatsapp", target_id="15551234567", timezone="UTC")
+            )
+            store.save_new_event(
+                Event(
+                    event_id="evt-body-fallback",
+                    version=1,
+                    title="Ignored Title",
+                    start_at_local=datetime(2026, 1, 3, 9, 10, tzinfo=UTC),
+                    timezone="UTC",
+                    participants=("p1",),
+                    audience=("p1",),
+                    reminder_offset_minutes=5,
+                    source_message_ref="msg-body-fallback",
+                )
+            )
+            store.save_reminder(
+                Reminder(
+                    reminder_id="rem-body-fallback",
+                    dedupe_key="k-body-fallback",
+                    event_id="evt-body-fallback",
+                    event_version=1,
+                    recipient_id="p1",
+                    trigger_at_utc=datetime(2026, 1, 3, 9, 5, tzinfo=UTC),
+                    offset_minutes=5,
+                    status="scheduled",
+                )
+            )
+            store.get_latest_event = lambda _event_id: None  # type: ignore[method-assign]
+
+            def send_capture(msg):
+                captured["body_text"] = msg.body_text
+                return OpenClawSendResponseNormalized(
+                    normalized_outcome_class="success",
+                    provider_status_code="ok",
+                    provider_receipt_ref="wamid.body.fallback",
+                    provider_error_class_hint=None,
+                    provider_error_message_sanitized=None,
+                    provider_confirmation_strength="confirmed",
+                    raw_observed_at_utc=datetime.now(UTC),
+                )
+
+            cb = DispatchCallbacks(store, lambda _e: None, oc_adapter=build_oc_adapter_binding(send_capture), cfg=_test_runner_cfg(Path(td)))
+            ok = cb.process_candidate(cb.list_candidates()[0])
+            self.assertTrue(ok)
+            self.assertEqual(captured["body_text"], "Reminder: event at 2026-01-03 09:05 UTC")
+
     def test_pf03_terminal_evidence_guard_blocks_invalid_adapter_result(self) -> None:
         from scripts.daemon_run import DispatchCallbacks, build_oc_adapter_binding
         from src.ctx002_v0.models import DeliveryTarget, Event, Reminder
@@ -1178,14 +1303,162 @@ class DaemonRunnerV013Tests(unittest.TestCase):
             self.assertIn("trace_id", terminal)
             self.assertIn("owner_id", terminal)
 
-    def test_production_binding_requires_gateway_url(self) -> None:
-        from scripts.daemon_run import RunnerExit, build_oc_adapter_binding
+    def test_production_binding_allows_default_gateway_mode_without_url(self) -> None:
+        from scripts.daemon_run import build_oc_adapter_binding
 
         with patch.dict(os.environ, {"KINFLOW_OC_SENDFN_MODE": "production"}, clear=False):
-            with patch.dict(os.environ, {"KINFLOW_GATEWAY_URL": ""}, clear=False):
-                with self.assertRaises(RunnerExit) as ctx:
-                    build_oc_adapter_binding()
-        self.assertEqual(ctx.exception.fail_token, "BOUNDARY_GATEWAY_URL_UNRESOLVED")
+            with patch.dict(
+                os.environ,
+                {
+                    "KINFLOW_GATEWAY_URL": "",
+                    "KINFLOW_GATEWAY_TOKEN": "",
+                    "KINFLOW_GATEWAY_PASSWORD": "",
+                },
+                clear=False,
+            ):
+                adapter = build_oc_adapter_binding()
+        self.assertIsNotNone(adapter)
+
+    def test_real_send_fn_default_mode_excludes_url_flag(self) -> None:
+        from scripts.daemon_run import build_real_gateway_send_fn
+        from src.ctx002_v0.oc_adapter import OutboundMessage
+
+        fake_stdout = json.dumps({"messageId": "wamid.HBgMNTU1"})
+        completed = subprocess.CompletedProcess(args=["openclaw"], returncode=0, stdout=fake_stdout, stderr="")
+
+        with patch("scripts.daemon_run.subprocess.run", return_value=completed) as run_mock:
+            send_fn = build_real_gateway_send_fn(
+                {
+                    "KINFLOW_GATEWAY_URL": "",
+                    "KINFLOW_GATEWAY_TOKEN": "",
+                    "KINFLOW_GATEWAY_PASSWORD": "",
+                }
+            )
+            send_fn(
+                OutboundMessage(
+                    delivery_id="d1",
+                    attempt_id="a1",
+                    attempt_index=1,
+                    trace_id="t1",
+                    causation_id="c1",
+                    channel_hint="whatsapp",
+                    target_ref="15551234567",
+                    subject_type="event_reminder",
+                    priority="normal",
+                    body_text="hello",
+                    dedupe_key="idem-1",
+                    created_at_utc=datetime.now(UTC),
+                )
+            )
+
+        cmd = run_mock.call_args.args[0]
+        self.assertNotIn("--url", cmd)
+        self.assertEqual(cmd[0:4], ["openclaw", "gateway", "call", "send"])
+
+    def test_real_send_fn_override_mode_with_token_includes_url_and_token(self) -> None:
+        from scripts.daemon_run import build_real_gateway_send_fn
+        from src.ctx002_v0.oc_adapter import OutboundMessage
+
+        fake_stdout = json.dumps({"messageId": "wamid.HBgMNTU1"})
+        completed = subprocess.CompletedProcess(args=["openclaw"], returncode=0, stdout=fake_stdout, stderr="")
+
+        with patch("scripts.daemon_run.subprocess.run", return_value=completed) as run_mock:
+            send_fn = build_real_gateway_send_fn(
+                {
+                    "KINFLOW_GATEWAY_URL": "ws://127.0.0.1:18789",
+                    "KINFLOW_GATEWAY_TOKEN": "tok",
+                    "KINFLOW_GATEWAY_PASSWORD": "",
+                }
+            )
+            send_fn(
+                OutboundMessage(
+                    delivery_id="d1",
+                    attempt_id="a1",
+                    attempt_index=1,
+                    trace_id="t1",
+                    causation_id="c1",
+                    channel_hint="whatsapp",
+                    target_ref="15551234567",
+                    subject_type="event_reminder",
+                    priority="normal",
+                    body_text="hello",
+                    dedupe_key="idem-1",
+                    created_at_utc=datetime.now(UTC),
+                )
+            )
+
+        cmd = run_mock.call_args.args[0]
+        self.assertIn("--url", cmd)
+        self.assertIn("ws://127.0.0.1:18789", cmd)
+        self.assertIn("--token", cmd)
+        self.assertNotIn("--password", cmd)
+
+    def test_real_send_fn_override_mode_with_password_includes_url_and_password(self) -> None:
+        from scripts.daemon_run import build_real_gateway_send_fn
+        from src.ctx002_v0.oc_adapter import OutboundMessage
+
+        fake_stdout = json.dumps({"messageId": "wamid.HBgMNTU1"})
+        completed = subprocess.CompletedProcess(args=["openclaw"], returncode=0, stdout=fake_stdout, stderr="")
+
+        with patch("scripts.daemon_run.subprocess.run", return_value=completed) as run_mock:
+            send_fn = build_real_gateway_send_fn(
+                {
+                    "KINFLOW_GATEWAY_URL": "ws://127.0.0.1:18789",
+                    "KINFLOW_GATEWAY_TOKEN": "",
+                    "KINFLOW_GATEWAY_PASSWORD": "pw",
+                }
+            )
+            send_fn(
+                OutboundMessage(
+                    delivery_id="d1",
+                    attempt_id="a1",
+                    attempt_index=1,
+                    trace_id="t1",
+                    causation_id="c1",
+                    channel_hint="whatsapp",
+                    target_ref="15551234567",
+                    subject_type="event_reminder",
+                    priority="normal",
+                    body_text="hello",
+                    dedupe_key="idem-1",
+                    created_at_utc=datetime.now(UTC),
+                )
+            )
+
+        cmd = run_mock.call_args.args[0]
+        self.assertIn("--url", cmd)
+        self.assertIn("--password", cmd)
+        self.assertNotIn("--token", cmd)
+
+    def test_real_send_fn_override_mode_without_credentials_raises_auth_unresolved(self) -> None:
+        from scripts.daemon_run import BoundaryFailStopError, build_real_gateway_send_fn
+        from src.ctx002_v0.oc_adapter import OutboundMessage
+
+        send_fn = build_real_gateway_send_fn(
+            {
+                "KINFLOW_GATEWAY_URL": "ws://127.0.0.1:18789",
+                "KINFLOW_GATEWAY_TOKEN": "",
+                "KINFLOW_GATEWAY_PASSWORD": "",
+            }
+        )
+        with self.assertRaises(BoundaryFailStopError) as ctx:
+            send_fn(
+                OutboundMessage(
+                    delivery_id="d1",
+                    attempt_id="a1",
+                    attempt_index=1,
+                    trace_id="t1",
+                    causation_id="c1",
+                    channel_hint="whatsapp",
+                    target_ref="15551234567",
+                    subject_type="event_reminder",
+                    priority="normal",
+                    body_text="hello",
+                    dedupe_key="idem-1",
+                    created_at_utc=datetime.now(UTC),
+                )
+            )
+        self.assertEqual(ctx.exception.code, "BOUNDARY_GATEWAY_AUTH_UNRESOLVED")
 
     def test_real_send_fn_success_mapping(self) -> None:
         from scripts.daemon_run import build_real_gateway_send_fn

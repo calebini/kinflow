@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
+from zoneinfo import ZoneInfo
 
 import fcntl
 
@@ -49,6 +50,7 @@ FAIL_TOKENS = {
     "FALLBACK_PATH_USED_WITHOUT_FLAG",
     "ADAPTER_ALIGNMENT_SEAM_GAP",
     "BOUNDARY_GATEWAY_URL_UNRESOLVED",
+    "BOUNDARY_GATEWAY_AUTH_UNRESOLVED",
     "BOUNDARY_CHANNEL_UNRESOLVED",
     "BOUNDARY_DESTINATION_UNRESOLVED",
     "BOUNDARY_IDEMPOTENCY_UNRESOLVED",
@@ -337,9 +339,7 @@ def _default_adapter_send(msg: OutboundMessage) -> OpenClawSendResponseNormalize
 
 def _read_gateway_runtime_inputs(env: dict[str, str] | None = None) -> dict[str, str | None]:
     env = env or os.environ
-    gateway_url = (env.get("KINFLOW_GATEWAY_URL") or "").strip()
-    if not gateway_url:
-        raise BoundaryFailStopError("BOUNDARY_GATEWAY_URL_UNRESOLVED", "missing KINFLOW_GATEWAY_URL")
+    gateway_url = (env.get("KINFLOW_GATEWAY_URL") or "").strip() or None
     return {
         "gateway_url": gateway_url,
         "gateway_token": (env.get("KINFLOW_GATEWAY_TOKEN") or "").strip() or None,
@@ -535,23 +535,34 @@ def build_real_gateway_send_fn(env: dict[str, str] | None = None):
         if optional_fields.get("gif_playback") is not None:
             params["gifPlayback"] = optional_fields["gif_playback"]
 
+        gateway_url = inputs["gateway_url"]
+        gateway_token = inputs["gateway_token"]
+        gateway_password = inputs["gateway_password"]
+
+        if gateway_url and not gateway_token and not gateway_password:
+            raise BoundaryFailStopError(
+                "BOUNDARY_GATEWAY_AUTH_UNRESOLVED",
+                "gateway url override requires explicit credentials",
+            )
+
         cmd = [
             "openclaw",
             "gateway",
             "call",
             "send",
-            "--url",
-            str(inputs["gateway_url"]),
             "--timeout",
             str(inputs["gateway_timeout_ms"]),
             "--params",
             json.dumps(params, sort_keys=True),
             "--json",
         ]
-        if inputs["gateway_token"]:
-            cmd.extend(["--token", str(inputs["gateway_token"])])
-        if inputs["gateway_password"]:
-            cmd.extend(["--password", str(inputs["gateway_password"])])
+        if gateway_url:
+            cmd[4:4] = ["--url", str(gateway_url)]
+        if gateway_token:
+            cmd.extend(["--token", str(gateway_token)])
+        if gateway_password:
+            cmd.extend(["--password", str(gateway_password)])
+
 
         completed = subprocess.run(cmd, capture_output=True, text=True, timeout=int(inputs["gateway_timeout_ms"]))
         if completed.returncode != 0:
@@ -658,6 +669,52 @@ class DispatchCallbacks:
         due = self.store.list_due_reminders(datetime.now(UTC), limit=100)
         return [{"id": r.reminder_id, "reminder": r} for r in due]
 
+    @staticmethod
+    def _resolve_zone_name(primary: str | None, fallback: str | None = None) -> str:
+        for candidate in (primary, fallback, "UTC"):
+            if isinstance(candidate, str) and candidate.strip():
+                name = candidate.strip()
+                try:
+                    ZoneInfo(name)
+                    return name
+                except Exception:
+                    continue
+        return "UTC"
+
+    @staticmethod
+    def _coerce_event_datetime(dt: datetime, source_tz_name: str) -> datetime:
+        if dt.tzinfo is not None:
+            return dt
+        try:
+            return dt.replace(tzinfo=ZoneInfo(source_tz_name))
+        except Exception:
+            return dt.replace(tzinfo=UTC)
+
+    def _build_whatsapp_body_text(self, reminder: Reminder, target) -> str:
+        event = self.store.get_latest_event(reminder.event_id)
+        target_tz_name = self._resolve_zone_name(target.timezone, None)
+
+        if event is not None:
+            title = (event.title or "").strip() or "event"
+            source_tz_name = self._resolve_zone_name(event.timezone, target_tz_name)
+            source_dt = self._coerce_event_datetime(event.start_at_local, source_tz_name)
+        else:
+            title = "event"
+            source_tz_name = "UTC"
+            source_dt = reminder.next_attempt_at_utc or reminder.trigger_at_utc
+            if source_dt.tzinfo is None:
+                source_dt = source_dt.replace(tzinfo=UTC)
+
+        try:
+            rendered_dt = source_dt.astimezone(ZoneInfo(target_tz_name))
+            rendered_tz = target_tz_name
+        except Exception:
+            rendered_dt = source_dt.astimezone(UTC)
+            rendered_tz = "UTC"
+
+        rendered_time = rendered_dt.strftime("%Y-%m-%d %H:%M")
+        return f"Reminder: {title} at {rendered_time} {rendered_tz}"
+
     def process_candidate(self, row: dict[str, Any]) -> bool:
         reminder: Reminder = row["reminder"]
         now = datetime.now(UTC)
@@ -712,7 +769,7 @@ class DispatchCallbacks:
                 target_ref=target.target_id,
                 subject_type="event_reminder",
                 priority="normal",
-                body_text="A/B lane probe A minimal send",
+                body_text=self._build_whatsapp_body_text(reminder, target),
                 dedupe_key=reminder.dedupe_key,
                 created_at_utc=now,
                 metadata_json={"daemon_cycle_id": row.get("cycle_id", "unknown")},
@@ -732,6 +789,7 @@ class DispatchCallbacks:
                     fail_token = "DELIVERED_WITHOUT_ADAPTER_RESULT"
             if adapter_result is not None and not self._delivered_evidence_ok(adapter_result):
                 fail_token = "DELIVERED_WITHOUT_ADAPTER_RESULT"
+
 
             classification = self._classify_post_send_seam(
                 adapter_result=adapter_result,
