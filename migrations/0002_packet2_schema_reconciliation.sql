@@ -36,7 +36,12 @@ INSERT OR REPLACE INTO enum_reason_codes_v2(code, class, active, version_tag) VA
 ('DB_RECONNECT_EXHAUSTED','runtime',1,'v0.2.6'),
 ('STARTUP_VALIDATION_FAILED','runtime',1,'v0.2.6'),
 ('SHUTDOWN_GRACE_EXCEEDED','runtime',1,'v0.2.6'),
-('CAPTURE_ONLY_BLOCKED','blocked',1,'v0.2.6');
+('CAPTURE_ONLY_BLOCKED','blocked',1,'v0.2.6'),
+('FAILED_ADAPTER_RESULT_MISSING','permanent',1,'v0.2.6'),
+('FAILED_ADAPTER_RESULT_INVALID','permanent',1,'v0.2.6'),
+('FAILED_ADAPTER_RESULT_UNMAPPABLE','permanent',1,'v0.2.6'),
+('ACCEPTED_UNVERIFIED','blocked',1,'v0.2.6'),
+('FAILED_ACCEPTED_UNVERIFIED_TIMEOUT','permanent',1,'v0.2.6');
 
 -- Normalize historical DELIVERED reason codes before swapping table.
 UPDATE audit_log SET reason_code = 'DELIVERED_SUCCESS' WHERE reason_code = 'DELIVERED';

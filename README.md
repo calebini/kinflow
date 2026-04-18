@@ -75,6 +75,11 @@ Core references:
 
 - `specs/KINFLOW_COMMS_ADAPTER_CONTRACT_MASTER_v0.1.7.md` (content version: v0.1.8)
 
+## Canonical Dispatcher↔OC Adapter Integration Addendum
+
+- `specs/KINFLOW_DISPATCHER_OC_ADAPTER_INTEGRATION_ADDENDUM_v0.1.7.md`
+- `specs/KINFLOW_DISPATCHER_OC_ADAPTER_INTEGRATION_ADDENDUM_v0.1.7b.md`
+
 ## Canonical Production Plan Checklist
 
 - `specs/KINFLOW_PRODUCTION_PLAN_CHECKLIST_MASTER.md`
@@ -83,6 +88,14 @@ Core references:
 
 - `specs/KINFLOW_DAEMON_RUNTIME_CONTRACT_MASTER_v0.1.4.md`
 
+## Canonical Daemon Deployment Contract
+
+- `specs/KINFLOW_DAEMON_DEPLOYMENT_CONTRACT_MASTER_v0.1.4.md`
+
+## Canonical Daemon Runner Implementation Spec
+
+- `specs/KINFLOW_DAEMON_RUNNER_IMPLEMENTATION_SPEC_MASTER_v0.1.3.md`
+
 ## Canonical OpenClaw Adapter Implementation Spec
 
 - `specs/KINFLOW_OC_ADAPTER_IMPLEMENTATION_SPEC_MASTER_v0.2.4.md` (content version: v0.2.5)
@@ -90,6 +103,10 @@ Core references:
 ## Canonical Reason Code Registry
 
 - `specs/KINFLOW_REASON_CODES_CANONICAL.md`
+
+## Canonical Notification Rendering Minimum Spec
+
+- `specs/KINFLOW_NOTIFICATION_RENDERING_MIN_SPEC_v0.5.3.md`
 
 ## Key Behaviors
 ### Idempotency
@@ -173,6 +190,7 @@ Every lifecycle step emits append-only, correlated audit events with reason code
 - `observability/phase5_5/alert_policy.yaml` — threshold/severity/runbook mapping for observability minimum
 - `scripts/phase5_5_observability_probe.py` — deterministic trigger/clear probe for all required signals
 - `docs/KINFLOW_PHASE6_CANARY_KICKOFF_REPORT.md` — Phase 6 bounded canary kickoff report with rollback-trigger verdicts
+- `docs/KINFLOW_USER_RUNBOOK_MASTER.md` — canonical user/operator runbook (practical usage quick-start and guardrails)
 - `observability/phase6/canary_policy.yaml` — canary envelope + rollback threshold policy
 - `scripts/phase6_canary_kickoff.py` — deterministic canary runner (readiness, snapshots, trigger evaluation, final verdict)
 - `docs/KINFLOW_OPERATOR_RUNBOOK_PHASE4.md` — operator startup/restart/incident runbook (Phase 4)

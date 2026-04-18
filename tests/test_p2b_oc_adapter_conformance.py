@@ -82,6 +82,39 @@ class P2BOCAdapterConformanceTests(unittest.TestCase):
         self.assertEqual(out.status, "FAILED_PERMANENT")
         self.assertEqual(out.reason_code, ReasonCode.FAILED_PROVIDER_PERMANENT.value)
 
+    def test_v12_override_exclusion_does_not_alter_weak_evidence_tuple(self) -> None:
+        clock = _Clock(datetime(2026, 3, 25, 19, 30, tzinfo=UTC))
+
+        def send_fn(_: OutboundMessage) -> OpenClawSendResponseNormalized:
+            return OpenClawSendResponseNormalized(
+                normalized_outcome_class="success",
+                provider_status_code="OVERRIDE_PERM",
+                provider_receipt_ref=None,
+                provider_error_class_hint="permanent",
+                provider_error_message_sanitized="would-be-overridden",
+                provider_confirmation_strength="accepted",
+                raw_observed_at_utc=clock(),
+            )
+
+        adapter = OpenClawGatewayAdapter(
+            send_fn=send_fn,
+            now_fn=clock,
+            policy_override_map={
+                "OVERRIDE_PERM": MappingRule(
+                    status="FAILED_PERMANENT",
+                    reason_code=ReasonCode.FAILED_PROVIDER_PERMANENT.value,
+                    retry_eligible=False,
+                    error_class="permanent",
+                )
+            },
+        )
+
+        out = adapter.send(self._outbound())
+        self.assertEqual(out.status, "DELIVERED")
+        self.assertEqual(out.reason_code, ReasonCode.DELIVERED_SUCCESS.value)
+        self.assertEqual(out.delivery_confidence, "provider_accepted")
+        self.assertTrue(out.provider_accept_only)
+
     def test_status_confidence_invariants_for_delivered(self) -> None:
         clock = _Clock(datetime(2026, 3, 25, 19, 31, tzinfo=UTC))
         calls: list[OutboundMessage] = []
