@@ -119,13 +119,13 @@ def run_probe(run_code: str, output_dir: Path, root: Path) -> dict[str, Any]:
         ProbeCase(
             case_id="01_discord_current_thread",
             channel="discord",
-            target="1470840649052983337",
+            target="DISCORD_TARGET_PLACEHOLDER",
             note="approved current Discord thread",
         ),
         ProbeCase(
             case_id="02_whatsapp_g_caleb_loop",
             channel="whatsapp",
-            target="whatsapp:g-caleb-loop",
+            target="whatsapp:g-example-loop",
             note="approved WhatsApp alias target",
         ),
         ProbeCase(

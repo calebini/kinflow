@@ -97,7 +97,7 @@ def _integrity_checks(conn: sqlite3.Connection) -> dict:
         "INSERT OR REPLACE INTO delivery_targets("
         "target_id,person_id,channel,target_ref,timezone,quiet_hours_start,quiet_hours_end,is_active,updated_at_utc"
         ") VALUES (?,?,?,?,?,?,?,?,?)",
-        ("caleb", "caleb", "whatsapp", "120363425701060269@g.us", "UTC", 22, 7, 1, now),
+        ("caleb", "caleb", "whatsapp", "WHATSAPP_GROUP_JID_PLACEHOLDER", "UTC", 22, 7, 1, now),
     )
 
     conn.execute(
