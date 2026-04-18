@@ -1538,7 +1538,12 @@ class DaemonRunnerV013Tests(unittest.TestCase):
         completed = subprocess.CompletedProcess(args=["openclaw"], returncode=0, stdout=fake_stdout, stderr="")
 
         with patch("scripts.daemon_run.subprocess.run", return_value=completed):
-            send_fn = build_real_gateway_send_fn({"KINFLOW_GATEWAY_URL": "ws://127.0.0.1:18789"})
+            send_fn = build_real_gateway_send_fn(
+ {
+ "KINFLOW_GATEWAY_URL": "ws://127.0.0.1:18789",
+ "KINFLOW_GATEWAY_TOKEN": "test-token",
+ }
+)
             result = send_fn(
                 OutboundMessage(
                     delivery_id="d1",
@@ -1567,7 +1572,12 @@ class DaemonRunnerV013Tests(unittest.TestCase):
         completed = subprocess.CompletedProcess(args=["openclaw"], returncode=0, stdout="not-json", stderr="")
 
         with patch("scripts.daemon_run.subprocess.run", return_value=completed):
-            send_fn = build_real_gateway_send_fn({"KINFLOW_GATEWAY_URL": "ws://127.0.0.1:18789"})
+            send_fn = build_real_gateway_send_fn(
+ {
+ "KINFLOW_GATEWAY_URL": "ws://127.0.0.1:18789",
+ "KINFLOW_GATEWAY_TOKEN": "test-token",
+ }
+)
             with self.assertRaises(BoundaryFailStopError) as ctx:
                 send_fn(
                     OutboundMessage(
