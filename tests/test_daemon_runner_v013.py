@@ -8,8 +8,8 @@ import sys
 import tempfile
 import unittest
 from datetime import UTC, datetime, timedelta
-from unittest.mock import patch
 from pathlib import Path
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "scripts" / "daemon_run.py"
@@ -237,7 +237,9 @@ class DaemonRunnerV013Tests(unittest.TestCase):
             store.save_reminder(reminder)
 
             with patch.dict(os.environ, {"KINFLOW_OC_SENDFN_MODE": "test_stub"}, clear=False):
-                cb = DispatchCallbacks(store, lambda _e: None, oc_adapter=build_oc_adapter_binding(), cfg=_test_runner_cfg(Path(td)))
+                cb = DispatchCallbacks(
+                    store, lambda _e: None, oc_adapter=build_oc_adapter_binding(), cfg=_test_runner_cfg(Path(td))
+                )
             rows = cb.list_candidates()
             self.assertGreaterEqual(len(rows), 1)
             ok = cb.process_candidate(rows[0])
@@ -301,7 +303,12 @@ class DaemonRunnerV013Tests(unittest.TestCase):
                     raw_observed_at_utc=datetime.now(UTC),
                 )
 
-            cb = DispatchCallbacks(store, lambda _e: None, oc_adapter=build_oc_adapter_binding(send_capture), cfg=_test_runner_cfg(Path(td)))
+            cb = DispatchCallbacks(
+                store,
+                lambda _e: None,
+                oc_adapter=build_oc_adapter_binding(send_capture),
+                cfg=_test_runner_cfg(Path(td)),
+            )
             ok = cb.process_candidate(cb.list_candidates()[0])
             self.assertTrue(ok)
 
@@ -370,7 +377,12 @@ class DaemonRunnerV013Tests(unittest.TestCase):
                     raw_observed_at_utc=datetime.now(UTC),
                 )
 
-            cb = DispatchCallbacks(store, lambda _e: None, oc_adapter=build_oc_adapter_binding(send_capture), cfg=_test_runner_cfg(Path(td)))
+            cb = DispatchCallbacks(
+                store,
+                lambda _e: None,
+                oc_adapter=build_oc_adapter_binding(send_capture),
+                cfg=_test_runner_cfg(Path(td)),
+            )
             ok = cb.process_candidate(cb.list_candidates()[0])
             self.assertTrue(ok)
             self.assertEqual(captured["body_text"], "Reminder: event at 2026-01-03 09:05 UTC")
@@ -384,7 +396,9 @@ class DaemonRunnerV013Tests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             db = Path(td) / "runtime.sqlite"
             store = SqliteStateStore.from_path(str(db))
-            store.save_delivery_target(DeliveryTarget(person_id="p1", channel="whatsapp", target_id="15551234567", timezone="UTC"))
+            store.save_delivery_target(
+                DeliveryTarget(person_id="p1", channel="whatsapp", target_id="15551234567", timezone="UTC")
+            )
             store.save_new_event(
                 Event(
                     event_id="evt-w1",
@@ -422,7 +436,9 @@ class DaemonRunnerV013Tests(unittest.TestCase):
                     raw_observed_at_utc=datetime.now(UTC),
                 )
 
-            cb = DispatchCallbacks(store, lambda _e: None, oc_adapter=build_oc_adapter_binding(bad_send), cfg=_test_runner_cfg(Path(td)))
+            cb = DispatchCallbacks(
+                store, lambda _e: None, oc_adapter=build_oc_adapter_binding(bad_send), cfg=_test_runner_cfg(Path(td))
+            )
             ok = cb.process_candidate(cb.list_candidates()[0])
             self.assertFalse(ok)
             reminder = store.list_reminders()[0]
@@ -442,7 +458,9 @@ class DaemonRunnerV013Tests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             db = Path(td) / "runtime.sqlite"
             store = SqliteStateStore.from_path(str(db))
-            store.save_delivery_target(DeliveryTarget(person_id="p1", channel="whatsapp", target_id="15551234567", timezone="UTC"))
+            store.save_delivery_target(
+                DeliveryTarget(person_id="p1", channel="whatsapp", target_id="15551234567", timezone="UTC")
+            )
             store.save_new_event(
                 Event(
                     event_id="evt-w2",
@@ -469,7 +487,13 @@ class DaemonRunnerV013Tests(unittest.TestCase):
                 )
             )
             with patch.dict(os.environ, {"KINFLOW_OC_SENDFN_MODE": "test_stub"}, clear=False):
-                cb = DispatchCallbacks(store, lambda _e: None, oc_adapter=build_oc_adapter_binding(), cfg=_test_runner_cfg(Path(td)), force_bypass=True)
+                cb = DispatchCallbacks(
+                    store,
+                    lambda _e: None,
+                    oc_adapter=build_oc_adapter_binding(),
+                    cfg=_test_runner_cfg(Path(td)),
+                    force_bypass=True,
+                )
             ok = cb.process_candidate(cb.list_candidates()[0])
             self.assertFalse(ok)
             attempt_row = store.conn.execute(
@@ -524,7 +548,13 @@ class DaemonRunnerV013Tests(unittest.TestCase):
             )
             store.save_reminder(reminder)
             with patch.dict(os.environ, {"KINFLOW_OC_SENDFN_MODE": "test_stub"}, clear=False):
-                cb = DispatchCallbacks(store, lambda e: events.append(e), oc_adapter=build_oc_adapter_binding(), cfg=_test_runner_cfg(Path(td)), force_bypass=True)
+                cb = DispatchCallbacks(
+                    store,
+                    lambda e: events.append(e),
+                    oc_adapter=build_oc_adapter_binding(),
+                    cfg=_test_runner_cfg(Path(td)),
+                    force_bypass=True,
+                )
             ok = cb.process_candidate(cb.list_candidates()[0])
             self.assertFalse(ok)
             seam_evt = [e for e in events if e.get("event") == "adapter_seam_failure_classified"][-1]
@@ -582,7 +612,12 @@ class DaemonRunnerV013Tests(unittest.TestCase):
                 )
 
             with patch.dict(os.environ, {"KINFLOW_OC_SENDFN_MODE": "test_stub"}, clear=False):
-                cb = DispatchCallbacks(store, lambda e: events.append(e), oc_adapter=build_oc_adapter_binding(bad_send), cfg=_test_runner_cfg(Path(td)))
+                cb = DispatchCallbacks(
+                    store,
+                    lambda e: events.append(e),
+                    oc_adapter=build_oc_adapter_binding(bad_send),
+                    cfg=_test_runner_cfg(Path(td)),
+                )
             ok = cb.process_candidate(cb.list_candidates()[0])
             self.assertFalse(ok)
             seam_evt = [e for e in events if e.get("event") == "adapter_seam_failure_classified"][-1]
@@ -640,10 +675,16 @@ class DaemonRunnerV013Tests(unittest.TestCase):
                 )
 
             with patch.dict(os.environ, {"KINFLOW_OC_SENDFN_MODE": "test_stub"}, clear=False):
-                cb = DispatchCallbacks(store, lambda e: events.append(e), oc_adapter=build_oc_adapter_binding(bad_send), cfg=_test_runner_cfg(Path(td)))
+                cb = DispatchCallbacks(
+                    store,
+                    lambda e: events.append(e),
+                    oc_adapter=build_oc_adapter_binding(bad_send),
+                    cfg=_test_runner_cfg(Path(td)),
+                )
             self.assertFalse(cb.process_candidate(cb.list_candidates()[0]))
             row = store.conn.execute(
-                "SELECT provider_ref, provider_status_code, delivery_confidence FROM delivery_attempts ORDER BY rowid DESC LIMIT 1"
+                "SELECT provider_ref, provider_status_code, delivery_confidence "
+                "FROM delivery_attempts ORDER BY rowid DESC LIMIT 1"
             ).fetchone()
             self.assertIsNone(row["provider_ref"])
             self.assertIsNone(row["provider_status_code"])
@@ -692,7 +733,12 @@ class DaemonRunnerV013Tests(unittest.TestCase):
             store.save_reminder(reminder)
 
             with patch.dict(os.environ, {"KINFLOW_OC_SENDFN_MODE": "test_stub"}, clear=False):
-                cb = DispatchCallbacks(store, lambda e: events.append(e), oc_adapter=build_oc_adapter_binding(), cfg=_test_runner_cfg(Path(td)))
+                cb = DispatchCallbacks(
+                    store,
+                    lambda e: events.append(e),
+                    oc_adapter=build_oc_adapter_binding(),
+                    cfg=_test_runner_cfg(Path(td)),
+                )
 
             cb._classify_post_send_seam = lambda **_: SeamClassification(
                 seam_reason_code="FAILED_ADAPTER_RESULT_INVALID",
@@ -768,7 +814,12 @@ class DaemonRunnerV013Tests(unittest.TestCase):
                 )
 
             with patch.dict(os.environ, {"KINFLOW_OC_SENDFN_MODE": "test_stub"}, clear=False):
-                cb = DispatchCallbacks(store, lambda e: events.append(e), oc_adapter=build_oc_adapter_binding(evt0002_send), cfg=_test_runner_cfg(Path(td)))
+                cb = DispatchCallbacks(
+                    store,
+                    lambda e: events.append(e),
+                    oc_adapter=build_oc_adapter_binding(evt0002_send),
+                    cfg=_test_runner_cfg(Path(td)),
+                )
             self.assertFalse(cb.process_candidate(cb.list_candidates()[0]))
             seam_evt = [e for e in events if e.get("event") == "adapter_seam_failure_classified"][-1]
             self.assertEqual(seam_evt.get("seam_branch"), "B")
@@ -776,7 +827,8 @@ class DaemonRunnerV013Tests(unittest.TestCase):
             self.assertFalse(seam_evt.get("unexpected_provider_fields_present"))
             self.assertEqual(seam_evt.get("terminal_decision"), "BLOCK")
             row = store.conn.execute(
-                "SELECT status, reason_code, provider_ref, provider_status_code, delivery_confidence FROM delivery_attempts ORDER BY rowid DESC LIMIT 1"
+                "SELECT status, reason_code, provider_ref, provider_status_code, delivery_confidence "
+ "FROM delivery_attempts ORDER BY rowid DESC LIMIT 1"
             ).fetchone()
             self.assertEqual(row["status"], "failed")
             self.assertEqual(row["reason_code"], "FAILED_ADAPTER_RESULT_INVALID")
@@ -1046,7 +1098,12 @@ class DaemonRunnerV013Tests(unittest.TestCase):
                 )
 
             with patch.dict(os.environ, {"KINFLOW_OC_SENDFN_MODE": "test_stub"}, clear=False):
-                cb = DispatchCallbacks(store, lambda _e: None, oc_adapter=build_oc_adapter_binding(weak_send), cfg=_test_runner_cfg(Path(td)))
+                cb = DispatchCallbacks(
+                    store,
+                    lambda _e: None,
+                    oc_adapter=build_oc_adapter_binding(weak_send),
+                    cfg=_test_runner_cfg(Path(td)),
+                )
             outbound_result = cb.oc_adapter.send(
                 OutboundMessage(
                     delivery_id="d-t5",
@@ -1109,7 +1166,12 @@ class DaemonRunnerV013Tests(unittest.TestCase):
             )
             store.save_reminder(reminder)
             with patch.dict(os.environ, {"KINFLOW_OC_SENDFN_MODE": "test_stub"}, clear=False):
-                cb = DispatchCallbacks(store, lambda e: events.append(e), oc_adapter=build_oc_adapter_binding(), cfg=_test_runner_cfg(Path(td)))
+                cb = DispatchCallbacks(
+                    store,
+                    lambda e: events.append(e),
+                    oc_adapter=build_oc_adapter_binding(),
+                    cfg=_test_runner_cfg(Path(td)),
+                )
 
             class _BadResult:
                 status = "DELIVERED"
@@ -1184,7 +1246,12 @@ class DaemonRunnerV013Tests(unittest.TestCase):
                 )
 
             with patch.dict(os.environ, {"KINFLOW_OC_SENDFN_MODE": "test_stub"}, clear=False):
-                cb = DispatchCallbacks(store, lambda _e: None, oc_adapter=build_oc_adapter_binding(valid_send), cfg=_test_runner_cfg(Path(td)))
+                cb = DispatchCallbacks(
+                    store,
+                    lambda _e: None,
+                    oc_adapter=build_oc_adapter_binding(valid_send),
+                    cfg=_test_runner_cfg(Path(td)),
+                )
 
             result = cb._route_post_send_failure(
                 reminder=reminder,
@@ -1213,7 +1280,8 @@ class DaemonRunnerV013Tests(unittest.TestCase):
             )
             self.assertFalse(result)
             row = store.conn.execute(
-                "SELECT reason_code, status, provider_ref, provider_status_code, delivery_confidence FROM delivery_attempts ORDER BY rowid DESC LIMIT 1"
+                "SELECT reason_code, status, provider_ref, provider_status_code, delivery_confidence "
+ "FROM delivery_attempts ORDER BY rowid DESC LIMIT 1"
             ).fetchone()
             self.assertEqual(row["status"], "failed")
             self.assertEqual(row["reason_code"], "FAILED_ADAPTER_RESULT_UNMAPPABLE")
