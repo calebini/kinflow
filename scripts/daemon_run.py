@@ -21,7 +21,19 @@ if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
 from ctx002_v0.daemon import DaemonRuntime, validate_daemon_config
-from ctx002_v0.models import AuditRecord, Reminder
+from ctx002_v0.models import (
+    ALLOWED_DESTINATION_CHANNELS,
+    DESTINATION_RESOLUTION_STATUS_INVALID,
+    DESTINATION_RESOLUTION_STATUS_MISSING,
+    DESTINATION_RESOLUTION_STATUS_OK,
+    DESTINATION_SOURCE_EVENT_OVERRIDE,
+    DESTINATION_SOURCE_NONE,
+    DESTINATION_SOURCE_RECIPIENT_DEFAULT,
+    DESTINATION_SOURCE_REQUEST_CONTEXT_DEFAULT,
+    TARGET_REF_MAX_LENGTH,
+    AuditRecord,
+    Reminder,
+)
 from ctx002_v0.oc_adapter import OpenClawGatewayAdapter, OpenClawSendResponseNormalized, OutboundMessage
 from ctx002_v0.persistence.reason_binding import ReasonCodeBinding
 from ctx002_v0.persistence.store import SqliteStateStore
@@ -641,6 +653,16 @@ class SeamClassification:
     token_origin_stage: str
 
 
+@dataclass(frozen=True)
+class DestinationResolution:
+    destination_source: str
+    destination_resolution_status: str
+    resolved_channel: str | None
+    resolved_target_ref: str | None
+    attempted_channel: str | None
+    attempted_target_ref: str | None
+
+
 class DispatchCallbacks:
     def __init__(
         self,
@@ -715,6 +737,131 @@ class DispatchCallbacks:
         rendered_time = rendered_dt.strftime("%Y-%m-%d %H:%M")
         return f"Reminder: {title} at {rendered_time} {rendered_tz}"
 
+    @staticmethod
+    def _normalize_destination_value(value: Any) -> str | None:
+        if value is None:
+            return None
+        if not isinstance(value, str):
+            value = str(value)
+        cleaned = value.strip()
+        return cleaned or None
+
+    @staticmethod
+    def _target_ref_has_control_characters(target_ref: str) -> bool:
+        return any(ord(ch) < 32 or ord(ch) == 127 for ch in target_ref)
+
+    def _validate_destination_candidate(
+        self,
+        *,
+        source: str,
+        channel: str | None,
+        target_ref: str | None,
+    ) -> DestinationResolution | None:
+        normalized_channel = self._normalize_destination_value(channel)
+        normalized_target_ref = self._normalize_destination_value(target_ref)
+
+        if normalized_channel is None and normalized_target_ref is None:
+            return None
+
+        attempted_channel = normalized_channel
+        attempted_target_ref = normalized_target_ref
+
+        if normalized_channel is None or normalized_target_ref is None:
+            return DestinationResolution(
+                destination_source=source,
+                destination_resolution_status=DESTINATION_RESOLUTION_STATUS_INVALID,
+                resolved_channel=None,
+                resolved_target_ref=None,
+                attempted_channel=attempted_channel,
+                attempted_target_ref=attempted_target_ref,
+            )
+
+        if normalized_channel not in ALLOWED_DESTINATION_CHANNELS:
+            return DestinationResolution(
+                destination_source=source,
+                destination_resolution_status=DESTINATION_RESOLUTION_STATUS_INVALID,
+                resolved_channel=None,
+                resolved_target_ref=None,
+                attempted_channel=attempted_channel,
+                attempted_target_ref=attempted_target_ref,
+            )
+
+        if len(normalized_target_ref) > TARGET_REF_MAX_LENGTH:
+            return DestinationResolution(
+                destination_source=source,
+                destination_resolution_status=DESTINATION_RESOLUTION_STATUS_INVALID,
+                resolved_channel=None,
+                resolved_target_ref=None,
+                attempted_channel=attempted_channel,
+                attempted_target_ref=attempted_target_ref,
+            )
+
+        if self._target_ref_has_control_characters(normalized_target_ref):
+            return DestinationResolution(
+                destination_source=source,
+                destination_resolution_status=DESTINATION_RESOLUTION_STATUS_INVALID,
+                resolved_channel=None,
+                resolved_target_ref=None,
+                attempted_channel=attempted_channel,
+                attempted_target_ref=attempted_target_ref,
+            )
+
+        return DestinationResolution(
+            destination_source=source,
+            destination_resolution_status=DESTINATION_RESOLUTION_STATUS_OK,
+            resolved_channel=normalized_channel,
+            resolved_target_ref=normalized_target_ref,
+            attempted_channel=attempted_channel,
+            attempted_target_ref=attempted_target_ref,
+        )
+
+    def _resolve_destination(self, reminder: Reminder, recipient_target) -> DestinationResolution:
+        event_override = self._validate_destination_candidate(
+            source=DESTINATION_SOURCE_EVENT_OVERRIDE,
+            channel=reminder.event_override_channel,
+            target_ref=reminder.event_override_target_ref,
+        )
+        if event_override is not None:
+            return event_override
+
+        request_context_default = self._validate_destination_candidate(
+            source=DESTINATION_SOURCE_REQUEST_CONTEXT_DEFAULT,
+            channel=reminder.request_context_default_channel,
+            target_ref=reminder.request_context_default_target_ref,
+        )
+        if request_context_default is not None:
+            return request_context_default
+
+        recipient_default = self._validate_destination_candidate(
+            source=DESTINATION_SOURCE_RECIPIENT_DEFAULT,
+            channel=getattr(recipient_target, "channel", None),
+            target_ref=getattr(recipient_target, "target_id", None),
+        )
+        if recipient_default is not None:
+            return recipient_default
+
+        return DestinationResolution(
+            destination_source=DESTINATION_SOURCE_NONE,
+            destination_resolution_status=DESTINATION_RESOLUTION_STATUS_MISSING,
+            resolved_channel=None,
+            resolved_target_ref=None,
+            attempted_channel=None,
+            attempted_target_ref=None,
+        )
+
+    @staticmethod
+    def _destination_kwargs(destination: DestinationResolution | None) -> dict[str, Any]:
+        if destination is None:
+            return {}
+        return {
+            "destination_source": destination.destination_source,
+            "destination_resolution_status": destination.destination_resolution_status,
+            "resolved_channel": destination.resolved_channel,
+            "resolved_target_ref": destination.resolved_target_ref,
+            "attempted_channel": destination.attempted_channel,
+            "attempted_target_ref": destination.attempted_target_ref,
+        }
+
     def process_candidate(self, row: dict[str, Any]) -> bool:
         reminder: Reminder = row["reminder"]
         now = datetime.now(UTC)
@@ -730,7 +877,46 @@ class DispatchCallbacks:
         reminder.attempts += 1
         self.store.update_reminder(reminder)
 
-        if target.channel == "whatsapp":
+        destination = self._resolve_destination(reminder, target)
+        if destination.destination_resolution_status != DESTINATION_RESOLUTION_STATUS_OK:
+            failure_message = (
+                "destination missing"
+                if destination.destination_resolution_status == DESTINATION_RESOLUTION_STATUS_MISSING
+                else "destination invalid"
+            )
+            self._persist_non_terminal_failure(
+                reminder,
+                ReasonCode.FAILED_CONFIG_INVALID_TARGET.value,
+                failure_message,
+                now,
+                destination=destination,
+            )
+            self._append_delivery_audit(
+                reminder.reminder_id,
+                ReasonCode.FAILED_CONFIG_INVALID_TARGET,
+                (
+                    f"terminal_decision=BLOCK;reason_code={ReasonCode.FAILED_CONFIG_INVALID_TARGET.value};"
+                    f"destination_source={destination.destination_source};"
+                    f"destination_resolution_status={destination.destination_resolution_status};"
+                    f"attempted_channel={destination.attempted_channel};"
+                    f"attempted_target_ref={destination.attempted_target_ref}"
+                ),
+            )
+            self.emit(
+                {
+                    "event": "dispatch_blocked",
+                    "reason_code": ReasonCode.FAILED_CONFIG_INVALID_TARGET.value,
+                    "reminder_id": reminder.reminder_id,
+                    "destination_source": destination.destination_source,
+                    "destination_resolution_status": destination.destination_resolution_status,
+                }
+            )
+            return False
+
+        resolved_channel = destination.resolved_channel or target.channel
+        resolved_target_ref = destination.resolved_target_ref or target.target_id
+
+        if resolved_channel == "whatsapp":
             if self.force_bypass:
                 return self._route_post_send_failure(
                     reminder=reminder,
@@ -740,6 +926,7 @@ class DispatchCallbacks:
                     token_origin_stage="POST_ADAPTER",
                     adapter_result=None,
                     adapter_exception=None,
+                    destination=destination,
                 )
             if self.oc_adapter is None:
                 if not self.allow_fallback:
@@ -751,12 +938,14 @@ class DispatchCallbacks:
                         token_origin_stage="POST_ADAPTER",
                         adapter_result=None,
                         adapter_exception=None,
+                        destination=destination,
                     )
                 return self._persist_non_terminal_failure(
                     reminder,
                     ReasonCode.FAILED_CONFIG_INVALID_TARGET.value,
                     "fallback send disabled",
                     now,
+                    destination=destination,
                 )
 
             outbound = OutboundMessage(
@@ -765,8 +954,8 @@ class DispatchCallbacks:
                 attempt_index=reminder.attempts,
                 trace_id="daemon_runner",
                 causation_id=reminder.reminder_id,
-                channel_hint="whatsapp",
-                target_ref=target.target_id,
+                channel_hint=resolved_channel,
+                target_ref=resolved_target_ref,
                 subject_type="event_reminder",
                 priority="normal",
                 body_text=self._build_whatsapp_body_text(reminder, target),
@@ -790,7 +979,6 @@ class DispatchCallbacks:
             if adapter_result is not None and not self._delivered_evidence_ok(adapter_result):
                 fail_token = "DELIVERED_WITHOUT_ADAPTER_RESULT"
 
-
             classification = self._classify_post_send_seam(
                 adapter_result=adapter_result,
                 adapter_exception=adapter_exception,
@@ -812,6 +1000,7 @@ class DispatchCallbacks:
                     adapter_result=adapter_result,
                     adapter_exception=adapter_exception,
                     attempt_id=outbound.attempt_id,
+                    destination=destination,
                 )
 
             if adapter_result is not None and self._is_accept_mode_candidate(adapter_result):
@@ -820,6 +1009,7 @@ class DispatchCallbacks:
                     now=now,
                     attempt_id=outbound.attempt_id,
                     fail_token=fail_token,
+                    destination=destination,
                 )
 
             if adapter_result is None:
@@ -832,6 +1022,7 @@ class DispatchCallbacks:
                     adapter_result=None,
                     adapter_exception=None,
                     attempt_id=outbound.attempt_id,
+                    destination=destination,
                 )
 
             reminder.status = "delivered"
@@ -852,11 +1043,17 @@ class DispatchCallbacks:
                 trace_id=adapter_result.trace_id,
                 causation_id=adapter_result.causation_id,
                 source_adapter_attempt_id=adapter_result.attempt_id,
+                **self._destination_kwargs(destination),
             )
             self._append_delivery_audit(
                 reminder.reminder_id,
                 ReasonCode.DELIVERED_SUCCESS,
-                f"adapter_result={adapter_result.status};terminal_decision=ALLOW;reason_code={adapter_result.reason_code}",
+                (
+                    f"adapter_result={adapter_result.status};terminal_decision=ALLOW;"
+                    f"reason_code={adapter_result.reason_code};destination_source={destination.destination_source};"
+                    f"destination_resolution_status={destination.destination_resolution_status};"
+                    f"resolved_channel={destination.resolved_channel};resolved_target_ref={destination.resolved_target_ref}"
+                ),
             )
             return True
 
@@ -878,8 +1075,18 @@ class DispatchCallbacks:
             trace_id="daemon_runner",
             causation_id=reminder.reminder_id,
             source_adapter_attempt_id=None,
+            **self._destination_kwargs(destination),
         )
-        self._append_delivery_audit(reminder.reminder_id, ReasonCode.DELIVERED_SUCCESS, reminder.dedupe_key)
+        self._append_delivery_audit(
+            reminder.reminder_id,
+            ReasonCode.DELIVERED_SUCCESS,
+            (
+                f"terminal_decision=ALLOW;reason_code={ReasonCode.DELIVERED_SUCCESS.value};"
+                f"destination_source={destination.destination_source};"
+                f"destination_resolution_status={destination.destination_resolution_status};"
+                f"resolved_channel={destination.resolved_channel};resolved_target_ref={destination.resolved_target_ref}"
+            ),
+        )
         return True
 
     def run_reconcile(self) -> bool:
@@ -1129,6 +1336,7 @@ class DispatchCallbacks:
         now: datetime,
         attempt_id: str,
         fail_token: str | None,
+        destination: DestinationResolution | None = None,
     ) -> bool:
         reminder.status = "failed"
         self.store.update_reminder(reminder)
@@ -1148,6 +1356,7 @@ class DispatchCallbacks:
             trace_id="daemon_runner",
             causation_id=reminder.reminder_id,
             source_adapter_attempt_id=attempt_id,
+            **self._destination_kwargs(destination),
         )
         self.accepted_unverified_total += 1
         self.emit(
@@ -1183,6 +1392,7 @@ class DispatchCallbacks:
         now: datetime,
         *,
         attempt_id: str | None = None,
+        destination: DestinationResolution | None = None,
     ) -> bool:
         reminder.status = "failed"
         self.store.update_reminder(reminder)
@@ -1203,6 +1413,7 @@ class DispatchCallbacks:
             trace_id="daemon_runner",
             causation_id=reminder.reminder_id,
             source_adapter_attempt_id=None,
+            **self._destination_kwargs(destination),
         )
         return False
 
@@ -1433,6 +1644,7 @@ class DispatchCallbacks:
         adapter_result: Any,
         adapter_exception: Exception | None,
         attempt_id: str | None = None,
+        destination: DestinationResolution | None = None,
     ) -> bool:
         normalized_origin = self._normalize_token_origin_stage(token_origin_stage)
         if normalized_origin not in POST_SEND_ORIGIN_STAGES:
@@ -1485,6 +1697,10 @@ class DispatchCallbacks:
             "provider_status_code": provider_discarded["provider_status_code"],
             "delivery_confidence": provider_discarded["delivery_confidence"],
             "contract_integrity_fail_total": self.contract_integrity_fail_total,
+            "destination_source": destination.destination_source if destination else None,
+            "destination_resolution_status": destination.destination_resolution_status if destination else None,
+            "resolved_channel": destination.resolved_channel if destination else None,
+            "resolved_target_ref": destination.resolved_target_ref if destination else None,
         }
 
         self._persist_non_terminal_failure(
@@ -1493,6 +1709,7 @@ class DispatchCallbacks:
             str(fail_token or (adapter_exception and str(adapter_exception)) or seam_reason_code),
             now,
             attempt_id=seam_output["attempt_id"],
+            destination=destination,
         )
         self._append_delivery_audit(
             reminder.reminder_id,
@@ -1504,7 +1721,10 @@ class DispatchCallbacks:
                 f"adapter_result_valid={classification.adapter_result_valid};evidence_ok={classification.evidence_ok};"
                 f"seam_branch={classification.seam_branch};terminal_decision=BLOCK;reason_code={seam_reason_code};"
                 f"provider_ref={seam_output['provider_ref']};provider_status_code={seam_output['provider_status_code']};"
-                f"delivery_confidence={seam_output['delivery_confidence']}"
+                f"delivery_confidence={seam_output['delivery_confidence']};"
+                f"destination_source={seam_output['destination_source']};"
+                f"destination_resolution_status={seam_output['destination_resolution_status']};"
+                f"resolved_channel={seam_output['resolved_channel']};resolved_target_ref={seam_output['resolved_target_ref']}"
             ),
         )
         self.emit({"event": "adapter_seam_failure_classified", **seam_output})
