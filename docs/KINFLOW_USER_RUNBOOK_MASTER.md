@@ -209,3 +209,67 @@ If invocation path is unavailable, return deterministic failure classification w
 - merge policy
 
 (Operational governance context; not user runtime behavior.)
+
+Per-Event Destination Override (CTX-002)
+What this enables
+Kinflow can route reminders per event instead of only using recipient default destination.
+
+Destination source precedence is fixed:
+event_override
+request_context_default
+recipient_default
+
+Operator responsibilities (Anchor)
+At event create/update time:
+derive ingress channel/context
+persist request_context_default in mutation payload
+do not rely on dispatch-time heuristic inference
+
+The engine consumes persisted routing inputs deterministically; it does not infer ingress context at send-time.
+
+Destination validation behavior
+Validation is dual-phase:
+write-time validation (mutation path)
+dispatch-time validation (authoritative pre-send check)
+
+Dispatch-time result is authoritative on disagreement.
+
+Failure behavior (deterministic)
+If destination cannot be resolved from any source:
+terminal failure
+reason_code=FAILED_CONFIG_INVALID_TARGET
+no delivered-success emission
+
+If event_override is invalid:
+terminal failure
+reason_code=FAILED_CONFIG_INVALID_TARGET
+canonical resolved destination fields remain null
+diagnostic attempted values may be emitted separately
+
+target_ref constraints
+max length: 256
+non-empty trimmed string
+no control characters
+canonicalized through adapter validation path
+
+Replay / idempotency note
+Destination tuple equivalence in this feature is feature-scoped and does not redefine global replay identity semantics.
+Quick verification checklist
+After changing destination behavior:
+run preflight/compat checks
+run required test set for destination precedence + invalid/missing cases
+run migration forward + rollback + post-rollback invariants
+run canaries for:
+event_override
+request_context_default
+recipient_default
+verify no seam/evidence invariant regressions
+
+Troubleshooting quick map
+FAILED_CONFIG_INVALID_TARGET:
+invalid/missing destination source resolution
+check override payload, request context default persistence, recipient default fallback
+dispatch validation fail after write-time pass:
+adapter canonicalization mismatch or stale destination value
+unexpected fallback source:
+verify precedence and recorded destination_source audit field
