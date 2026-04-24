@@ -243,3 +243,8 @@ Script purposes:
 - Calendar integrations are intentionally out-of-scope for v0.
 - Persistence/deployment hardening may still require follow-on phases.
 - GitHub square-one hygiene/CI standardization should be completed and enforced as policy gates.
+
+## Roadmap
+
+- Delivery target decoupling (next-version planning): `roadmap/DELIVERY_TARGET_DECOUPLING_MASTER.md`
+
