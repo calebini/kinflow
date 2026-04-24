@@ -6,6 +6,8 @@ from typing import Literal
 
 from .reason_codes import ReasonCode
 
+TARGET_REF_MAX_LENGTH = 256
+
 ReminderStatus = Literal[
     "scheduled",
     "attempted",

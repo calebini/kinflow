@@ -5,6 +5,7 @@ import unittest
 from datetime import UTC, datetime
 
 from ctx002_v0 import DeliveryTarget, FamilySchedulerV0
+from ctx002_v0.persistence.store import TargetRefValidationError
 
 
 def _intent(
@@ -122,6 +123,49 @@ class P1BRepoIntegrationTests(unittest.TestCase):
             conn = second._store.conn  # type: ignore[attr-defined]
             events = conn.execute("SELECT COUNT(*) AS n FROM events").fetchone()["n"]
             self.assertEqual(events, 1)
+
+    def test_target_ref_width_guard_enforced_for_memory_and_sqlite_store(self) -> None:
+        within_limit = "x" * 256
+        overflow = "x" * 257
+
+        mem = FamilySchedulerV0(household_timezone="Europe/Paris")
+        mem.register_delivery_target(
+            DeliveryTarget(
+                person_id="mem-ok",
+                channel="discord",
+                target_id=within_limit,
+                timezone="Europe/Paris",
+            )
+        )
+        with self.assertRaises(TargetRefValidationError):
+            mem.register_delivery_target(
+                DeliveryTarget(
+                    person_id="mem-bad",
+                    channel="discord",
+                    target_id=overflow,
+                    timezone="Europe/Paris",
+                )
+            )
+
+        with tempfile.NamedTemporaryFile(suffix=".sqlite") as tf:
+            db = FamilySchedulerV0(household_timezone="Europe/Paris", db_path=tf.name)
+            db.register_delivery_target(
+                DeliveryTarget(
+                    person_id="db-ok",
+                    channel="discord",
+                    target_id=within_limit,
+                    timezone="Europe/Paris",
+                )
+            )
+            with self.assertRaises(TargetRefValidationError):
+                db.register_delivery_target(
+                    DeliveryTarget(
+                        person_id="db-bad",
+                        channel="discord",
+                        target_id=overflow,
+                        timezone="Europe/Paris",
+                    )
+                )
 
 
 if __name__ == "__main__":

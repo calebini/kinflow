@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import sqlite3
 import tempfile
 import unittest
 from pathlib import Path
@@ -151,6 +152,27 @@ class Packet2SchemaReconciliationTests(unittest.TestCase):
                 None,
             ),
         )
+
+    def test_delivery_target_ref_width_alignment_enforced(self) -> None:
+        conn = self._conn()
+        apply_migrations(conn, discover_migrations())
+
+        conn.execute(
+            """
+            INSERT INTO delivery_targets(target_id,person_id,channel,target_ref,timezone,updated_at_utc)
+            VALUES (?,?,?,?,?,?)
+            """,
+            ("ok-256", "ok-256", "discord", "x" * 256, "UTC", "2026-03-24T00:00:00+00:00"),
+        )
+
+        with self.assertRaises(sqlite3.IntegrityError):
+            conn.execute(
+                """
+                INSERT INTO delivery_targets(target_id,person_id,channel,target_ref,timezone,updated_at_utc)
+                VALUES (?,?,?,?,?,?)
+                """,
+                ("bad-257", "bad-257", "discord", "x" * 257, "UTC", "2026-03-24T00:00:00+00:00"),
+            )
 
 
 if __name__ == "__main__":

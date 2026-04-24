@@ -6,12 +6,24 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Callable, Protocol
 
-from ..models import AuditRecord, DeliveryTarget, Event, Reminder
+from ..models import TARGET_REF_MAX_LENGTH, AuditRecord, DeliveryTarget, Event, Reminder
+from ..reason_codes import ReasonCode
 from .db import bootstrap_database
 
 
 class VersionConflictError(RuntimeError):
     pass
+
+
+class TargetRefValidationError(ValueError):
+    reason_code = ReasonCode.FAILED_CONFIG_INVALID_TARGET.value
+
+
+def _validate_target_ref_width(target_ref: str) -> None:
+    if len(target_ref) > TARGET_REF_MAX_LENGTH:
+        raise TargetRefValidationError(
+            f"{ReasonCode.FAILED_CONFIG_INVALID_TARGET.value}: target_ref length exceeds {TARGET_REF_MAX_LENGTH}"
+        )
 
 
 class StateStore(Protocol):
@@ -189,6 +201,7 @@ class InMemoryStateStore:
         self.reminders[reminder.dedupe_key] = reminder
 
     def save_delivery_target(self, target: DeliveryTarget) -> None:
+        _validate_target_ref_width(target.target_id)
         self.delivery_targets[target.person_id] = target
 
     def get_delivery_target(self, person_id: str) -> DeliveryTarget | None:
@@ -577,6 +590,7 @@ class SqliteStateStore:
         self.conn.commit()
 
     def save_delivery_target(self, target: DeliveryTarget) -> None:
+        _validate_target_ref_width(target.target_id)
         self.conn.execute(
             """
             INSERT OR REPLACE INTO delivery_targets(
@@ -653,7 +667,6 @@ class SqliteStateStore:
         output = []
         for idx, row in enumerate(rows, start=1):
             payload = json.loads(row["payload_json"]).get("payload", "")
-            from ..reason_codes import ReasonCode
 
             output.append(
                 AuditRecord(

@@ -140,6 +140,53 @@ class P2BOCAdapterConformanceTests(unittest.TestCase):
         self.assertIsNone(out.error_object)
         self.assertEqual(calls[0].target_ref, "120363425701060269@g.us")
 
+    def test_target_ref_length_256_passes_in_adapter_dispatch_validation_path(self) -> None:
+        clock = _Clock(datetime(2026, 3, 25, 19, 31, tzinfo=UTC))
+        calls = {"n": 0}
+
+        def send_fn(_: OutboundMessage) -> OpenClawSendResponseNormalized:
+            calls["n"] += 1
+            return OpenClawSendResponseNormalized(
+                normalized_outcome_class="success",
+                provider_status_code="ok",
+                provider_receipt_ref="msg-256",
+                provider_error_class_hint=None,
+                provider_error_message_sanitized=None,
+                provider_confirmation_strength="confirmed",
+                raw_observed_at_utc=clock(),
+            )
+
+        adapter = OpenClawGatewayAdapter(send_fn=send_fn, now_fn=clock)
+        out = adapter.send(self._outbound(channel_hint="discord", target_ref="x" * 256, attempt_id="att-256"))
+        self.assertEqual(out.status, "DELIVERED")
+        self.assertEqual(out.reason_code, ReasonCode.DELIVERED_SUCCESS.value)
+        self.assertEqual(calls["n"], 1)
+
+    def test_target_ref_length_257_fails_config_invalid_target_without_false_delivery(self) -> None:
+        clock = _Clock(datetime(2026, 3, 25, 19, 31, tzinfo=UTC))
+        calls = {"n": 0}
+
+        def send_fn(_: OutboundMessage) -> OpenClawSendResponseNormalized:
+            calls["n"] += 1
+            return OpenClawSendResponseNormalized(
+                normalized_outcome_class="success",
+                provider_status_code="ok",
+                provider_receipt_ref="msg-257-should-not-send",
+                provider_error_class_hint=None,
+                provider_error_message_sanitized=None,
+                provider_confirmation_strength="confirmed",
+                raw_observed_at_utc=clock(),
+            )
+
+        adapter = OpenClawGatewayAdapter(send_fn=send_fn, now_fn=clock)
+        out = adapter.send(self._outbound(channel_hint="discord", target_ref="x" * 257, attempt_id="att-257"))
+        self.assertEqual(out.status, "BLOCKED")
+        self.assertEqual(out.reason_code, ReasonCode.FAILED_CONFIG_INVALID_TARGET.value)
+        self.assertEqual(out.delivery_confidence, "none")
+        self.assertFalse(out.retry_eligible)
+        self.assertIsNone(out.provider_receipt_ref)
+        self.assertEqual(calls["n"], 0)
+
     def test_replay_attempt_id_and_dedupe_window(self) -> None:
         clock = _Clock(datetime(2026, 3, 25, 19, 32, tzinfo=UTC))
         send_calls = 0

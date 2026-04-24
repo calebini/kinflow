@@ -6,6 +6,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Callable, Literal
 
+from .models import TARGET_REF_MAX_LENGTH
 from .persistence.reason_binding import ReasonCodeBinding, validate_reason_code_binding
 from .reason_codes import ReasonCode
 
@@ -252,6 +253,20 @@ class OpenClawGatewayAdapter:
             self._append_audit("capability_blocked", canonical, outbound.dedupe_key, outbound)
             return canonical
 
+        if self._target_ref_exceeds_max(outbound.target_ref):
+            canonical = self._freeze_result(
+                canonical=self._blocked_result(
+                    outbound,
+                    reason_code=ReasonCode.FAILED_CONFIG_INVALID_TARGET.value,
+                    message=f"target_ref length exceeds {TARGET_REF_MAX_LENGTH}",
+                    retry_classification_source="policy_override",
+                    error_class="config",
+                ),
+                dedupe_key=outbound.dedupe_key,
+            )
+            self._append_audit("target_ref_width_blocked", canonical, outbound.dedupe_key, outbound)
+            return canonical
+
         normalized_target = self._normalize_target(outbound)
         if normalized_target is None:
             canonical = self._freeze_result(
@@ -265,6 +280,20 @@ class OpenClawGatewayAdapter:
                 dedupe_key=outbound.dedupe_key,
             )
             self._append_audit("capability_blocked", canonical, outbound.dedupe_key, outbound)
+            return canonical
+
+        if self._target_ref_exceeds_max(normalized_target):
+            canonical = self._freeze_result(
+                canonical=self._blocked_result(
+                    outbound,
+                    reason_code=ReasonCode.FAILED_CONFIG_INVALID_TARGET.value,
+                    message=f"canonical target_ref length exceeds {TARGET_REF_MAX_LENGTH}",
+                    retry_classification_source="policy_override",
+                    error_class="config",
+                ),
+                dedupe_key=outbound.dedupe_key,
+            )
+            self._append_audit("target_ref_width_blocked", canonical, outbound.dedupe_key, outbound)
             return canonical
 
         if self._read_runtime_mode() == "capture_only":
@@ -371,6 +400,10 @@ class OpenClawGatewayAdapter:
                 error_class="config",
             )
         return None
+
+    @staticmethod
+    def _target_ref_exceeds_max(target_ref: str) -> bool:
+        return len(target_ref) > TARGET_REF_MAX_LENGTH
 
     def _normalize_target(self, outbound: OutboundMessage) -> str | None:
         if outbound.channel_hint != "whatsapp":
