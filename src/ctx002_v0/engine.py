@@ -4,14 +4,19 @@ import json
 from dataclasses import asdict
 from datetime import UTC, datetime, timedelta
 from hashlib import sha256
-from typing import Callable
+from typing import Any, Callable
 from zoneinfo import ZoneInfo
 
-from .models import AuditRecord, DeliveryTarget, Event, Reminder
+from .models import ALLOWED_DESTINATION_CHANNELS, TARGET_REF_MAX_LENGTH, AuditRecord, DeliveryTarget, Event, Reminder
 from .persistence.store import InMemoryStateStore, SqliteStateStore, StateStore, VersionConflictError
 from .reason_codes import ReasonCode
 
-ProviderFn = Callable[[Reminder], bool]
+ProviderResult = bool | dict[str, Any]
+ProviderFn = Callable[[Reminder], ProviderResult]
+
+
+class DestinationValidationError(ValueError):
+    reason_code = ReasonCode.FAILED_CONFIG_INVALID_TARGET
 
 
 class FamilySchedulerV0:
@@ -67,7 +72,113 @@ class FamilySchedulerV0:
     def set_runtime_mode(self, mode: str) -> None:
         self._store.set_runtime_mode(mode)
 
+    @staticmethod
+    def _normalize_optional_string(value: Any) -> str | None:
+        if value is None:
+            return None
+        if not isinstance(value, str):
+            value = str(value)
+        trimmed = value.strip()
+        return trimmed or None
+
+    @staticmethod
+    def _has_control_characters(value: str) -> bool:
+        return any(ord(ch) < 32 or ord(ch) == 127 for ch in value)
+
+    @classmethod
+    def _validate_destination_tuple(cls, channel: str | None, target_ref: str | None, *, prefix: str) -> tuple[str | None, str | None]:
+        if channel is None and target_ref is None:
+            return None, None
+        if channel is None or target_ref is None:
+            raise DestinationValidationError(f"{prefix} must provide both channel and target_ref")
+        if channel not in ALLOWED_DESTINATION_CHANNELS:
+            raise DestinationValidationError(f"{prefix} channel is not in allowed enum")
+        if len(target_ref) > TARGET_REF_MAX_LENGTH:
+            raise DestinationValidationError(f"{prefix} target_ref exceeds {TARGET_REF_MAX_LENGTH}")
+        if cls._has_control_characters(target_ref):
+            raise DestinationValidationError(f"{prefix} target_ref contains control characters")
+        return channel, target_ref
+
+    @staticmethod
+    def _normalize_destination_payload_shape(intent: dict[str, Any]) -> dict[str, Any]:
+        """Backward-compatible nested destination payload normalization.
+
+        Live ingress paths may still provide destination fields as nested objects:
+        - event_override: {channel, target_ref}
+        - request_context_default: {channel, target_ref}
+
+        Engine internals are keyed by flattened fields. Normalize at process_intent
+        boundary so downstream validation/persistence stays deterministic.
+        """
+
+        normalized = dict(intent)
+
+        def _lift(prefix: str) -> None:
+            nested_key = prefix
+            channel_key = f"{prefix}_channel"
+            target_key = f"{prefix}_target_ref"
+
+            if channel_key in normalized or target_key in normalized:
+                return
+            if nested_key not in normalized:
+                return
+
+            nested = normalized.get(nested_key)
+            if nested is None:
+                normalized[channel_key] = None
+                normalized[target_key] = None
+                return
+            if not isinstance(nested, dict):
+                raise DestinationValidationError(f"{prefix} must be object or null")
+
+            normalized[channel_key] = nested.get("channel")
+            normalized[target_key] = nested.get("target_ref")
+
+        _lift("event_override")
+        _lift("request_context_default")
+        return normalized
+
+    def _resolve_event_destination_fields(
+        self,
+        intent: dict,
+        *,
+        current_event: Event | None,
+    ) -> tuple[str | None, str | None, str | None, str | None]:
+        def _resolve(prefix: str, current_channel: str | None, current_target: str | None) -> tuple[str | None, str | None]:
+            channel_key = f"{prefix}_channel"
+            target_key = f"{prefix}_target_ref"
+            has_channel = channel_key in intent
+            has_target = target_key in intent
+
+            if has_channel != has_target:
+                raise DestinationValidationError(f"{prefix} update must include both channel and target_ref")
+
+            if not has_channel and not has_target:
+                return current_channel, current_target
+
+            raw_channel = self._normalize_optional_string(intent.get(channel_key))
+            raw_target = self._normalize_optional_string(intent.get(target_key))
+            return self._validate_destination_tuple(raw_channel, raw_target, prefix=prefix)
+
+        event_override_channel, event_override_target_ref = _resolve(
+            "event_override",
+            current_event.event_override_channel if current_event else None,
+            current_event.event_override_target_ref if current_event else None,
+        )
+        request_context_default_channel, request_context_default_target_ref = _resolve(
+            "request_context_default",
+            current_event.request_context_default_channel if current_event else None,
+            current_event.request_context_default_target_ref if current_event else None,
+        )
+        return (
+            event_override_channel,
+            event_override_target_ref,
+            request_context_default_channel,
+            request_context_default_target_ref,
+        )
+
     def process_intent(self, intent: dict) -> dict:
+        intent = self._normalize_destination_payload_shape(intent)
         message_id = intent["message_id"]
         correlation_id = intent.get("correlation_id") or f"corr:{message_id}"
         now_utc = intent.get("received_at_utc") or datetime.now(UTC)
@@ -173,6 +284,20 @@ class FamilySchedulerV0:
                 "event_version": event.version,
                 "reason_code": resolver_code.value,
             }
+        except DestinationValidationError as exc:
+            self._append_audit(
+                correlation_id,
+                message_id,
+                "mutation",
+                ReasonCode.FAILED_CONFIG_INVALID_TARGET,
+                str(exc),
+            )
+            result = {
+                "status": "blocked",
+                "persisted": False,
+                "event_id": resolved_event_id,
+                "reason_code": ReasonCode.FAILED_CONFIG_INVALID_TARGET.value,
+            }
         except VersionConflictError:
             self._append_audit(
                 correlation_id, message_id, "mutation", ReasonCode.VERSION_CONFLICT_RETRY, resolved_event_id or "none"
@@ -268,8 +393,32 @@ class FamilySchedulerV0:
             if delivery_key in self._visible_delivery_keys:
                 continue
 
-            ok = provider(reminder)
-            if ok:
+            provider_result = provider(reminder)
+            provider_ok: bool
+            provider_ref: str | None = None
+            provider_status_code: str | None = None
+            provider_error_text: str | None = None
+            provider_accept_only = False
+            delivery_confidence = "none"
+
+            if isinstance(provider_result, dict):
+                provider_ok = bool(provider_result.get("ok", False))
+                provider_ref = provider_result.get("provider_ref")
+                provider_status_code = provider_result.get("provider_status_code")
+                provider_error_text = provider_result.get("provider_error_text")
+                provider_accept_only = bool(provider_result.get("provider_accept_only", False))
+                delivery_confidence = provider_result.get("delivery_confidence") or "none"
+            else:
+                provider_ok = bool(provider_result)
+
+            has_transport_evidence = self._has_transport_meaningful_ref(
+                provider_ref,
+                reminder_id=reminder.reminder_id,
+                dedupe_key=delivery_key,
+            )
+            effective_provider_ref = provider_ref if has_transport_evidence else delivery_key
+
+            if provider_ok:
                 reminder.status = "delivered"
                 self._store.update_reminder(reminder)
                 self._visible_delivery_keys.add(delivery_key)
@@ -281,23 +430,33 @@ class FamilySchedulerV0:
                     attempted_at_utc=now_utc,
                     status="delivered",
                     reason_code=ReasonCode.DELIVERED_SUCCESS.value,
-                    provider_ref=delivery_key,
-                    provider_status_code="ok",
+                    provider_ref=effective_provider_ref,
+                    provider_status_code=provider_status_code or "ok",
                     provider_error_text=None,
-                    provider_accept_only=False,
-                    delivery_confidence="provider_confirmed",
+                    provider_accept_only=provider_accept_only or not has_transport_evidence,
+                    delivery_confidence=(
+                        delivery_confidence
+                        if delivery_confidence != "none"
+                        else ("provider_confirmed" if has_transport_evidence else "provider_accepted")
+                    ),
                     result_at_utc=now_utc,
                     trace_id="delivery",
                     causation_id=reminder.reminder_id,
                     source_adapter_attempt_id=None,
                 )
                 self._append_audit(
-                    "delivery", reminder.reminder_id, "delivery", ReasonCode.DELIVERED_SUCCESS, delivery_key
+                    "delivery",
+                    reminder.reminder_id,
+                    "delivery",
+                    ReasonCode.DELIVERED_SUCCESS,
+                    effective_provider_ref,
                 )
                 continue
 
+            fail_reason = ReasonCode.FAILED_PROVIDER_TRANSIENT
+            fail_error_text = provider_error_text or "provider transient failure"
             self._append_audit(
-                "delivery", reminder.reminder_id, "delivery", ReasonCode.FAILED_PROVIDER_TRANSIENT, delivery_key
+                "delivery", reminder.reminder_id, "delivery", fail_reason, provider_ref or delivery_key
             )
             retry_limit = min(self.max_retries, self._store.get_max_retry_attempts())
             if reminder.attempts > retry_limit:
@@ -310,9 +469,9 @@ class FamilySchedulerV0:
                     attempted_at_utc=now_utc,
                     status="failed",
                     reason_code=ReasonCode.FAILED_RETRY_EXHAUSTED.value,
-                    provider_ref=delivery_key,
-                    provider_status_code="retry_exhausted",
-                    provider_error_text="retry exhausted",
+                    provider_ref=provider_ref,
+                    provider_status_code=provider_status_code or "retry_exhausted",
+                    provider_error_text=fail_error_text,
                     provider_accept_only=False,
                     delivery_confidence="none",
                     result_at_utc=now_utc,
@@ -326,7 +485,7 @@ class FamilySchedulerV0:
                     reminder.reminder_id,
                     "delivery",
                     ReasonCode.FAILED_RETRY_EXHAUSTED,
-                    delivery_key,
+                    provider_ref or delivery_key,
                 )
             else:
                 reminder.next_attempt_at_utc = now_utc + timedelta(minutes=self.retry_delay_minutes)
@@ -337,10 +496,10 @@ class FamilySchedulerV0:
                     attempt_index=reminder.attempts,
                     attempted_at_utc=now_utc,
                     status="failed",
-                    reason_code=ReasonCode.FAILED_PROVIDER_TRANSIENT.value,
-                    provider_ref=delivery_key,
-                    provider_status_code="transient",
-                    provider_error_text="provider transient failure",
+                    reason_code=fail_reason.value,
+                    provider_ref=provider_ref,
+                    provider_status_code=provider_status_code or "transient",
+                    provider_error_text=fail_error_text,
                     provider_accept_only=False,
                     delivery_confidence="none",
                     result_at_utc=now_utc,
@@ -348,8 +507,34 @@ class FamilySchedulerV0:
                     causation_id=reminder.reminder_id,
                     source_adapter_attempt_id=None,
                 )
-                outcomes.append((delivery_key, ReasonCode.FAILED_PROVIDER_TRANSIENT))
+                outcomes.append((delivery_key, fail_reason))
         return outcomes
+
+    @staticmethod
+    def _has_transport_meaningful_ref(provider_ref: str | None, *, reminder_id: str, dedupe_key: str) -> bool:
+        if provider_ref is None:
+            return False
+        token = provider_ref.strip()
+        if not token:
+            return False
+        lowered = token.lower()
+        blocked_tokens = {
+            "none",
+            "null",
+            "n/a",
+            "na",
+            "placeholder",
+            "synthetic",
+            dedupe_key.lower(),
+            reminder_id.lower(),
+            f"att-{reminder_id}".lower(),
+            f"rcpt:att-{reminder_id}".lower(),
+        }
+        if lowered in blocked_tokens:
+            return False
+        if lowered.startswith("att-") or lowered.startswith("rcpt:att-"):
+            return False
+        return True
 
     def run_reconciliation_batch(self, now_utc: datetime, *, batch_size: int = 50) -> dict:
         if self._store.get_runtime_mode() == "capture_only":
@@ -433,6 +618,12 @@ class FamilySchedulerV0:
     def _create_event(self, intent: dict) -> Event:
         tz_name, tz_reason = self._resolve_event_timezone(intent)
         self._append_audit(intent["message_id"], intent["message_id"], "timezone", tz_reason, tz_name)
+        (
+            event_override_channel,
+            event_override_target_ref,
+            request_context_default_channel,
+            request_context_default_target_ref,
+        ) = self._resolve_event_destination_fields(intent, current_event=None)
         event_id = self._store.next_event_id()
         event = Event(
             event_id=event_id,
@@ -445,6 +636,10 @@ class FamilySchedulerV0:
             reminder_offset_minutes=intent["reminder_offset_minutes"],
             all_day=bool(intent.get("all_day", False)),
             source_message_ref=intent["message_id"],
+            event_override_channel=event_override_channel,
+            event_override_target_ref=event_override_target_ref,
+            request_context_default_channel=request_context_default_channel,
+            request_context_default_target_ref=request_context_default_target_ref,
         )
         self._store.save_new_event(event)
         self._schedule_reminders(event)
@@ -456,6 +651,12 @@ class FamilySchedulerV0:
             raise ValueError(f"missing event: {event_id}")
         tz_name, tz_reason = self._resolve_event_timezone(intent, current.timezone)
         self._append_audit(intent["message_id"], intent["message_id"], "timezone", tz_reason, tz_name)
+        (
+            event_override_channel,
+            event_override_target_ref,
+            request_context_default_channel,
+            request_context_default_target_ref,
+        ) = self._resolve_event_destination_fields(intent, current_event=current)
         updated = Event(
             event_id=event_id,
             version=current.version + 1,
@@ -468,6 +669,10 @@ class FamilySchedulerV0:
             all_day=bool(intent.get("all_day", current.all_day)),
             status="active",
             source_message_ref=intent["message_id"],
+            event_override_channel=event_override_channel,
+            event_override_target_ref=event_override_target_ref,
+            request_context_default_channel=request_context_default_channel,
+            request_context_default_target_ref=request_context_default_target_ref,
         )
         self._store.append_event_version(updated)
         self._invalidate_prior_version_reminders(event_id, updated.version, now_utc, ReasonCode.UPDATED_REGENERATED)
@@ -492,6 +697,10 @@ class FamilySchedulerV0:
             all_day=current.all_day,
             status="cancelled",
             source_message_ref=intent["message_id"],
+            event_override_channel=current.event_override_channel,
+            event_override_target_ref=current.event_override_target_ref,
+            request_context_default_channel=current.request_context_default_channel,
+            request_context_default_target_ref=current.request_context_default_target_ref,
         )
         self._store.append_event_version(cancelled)
         self._invalidate_prior_version_reminders(event_id, cancelled.version, now_utc, ReasonCode.CANCEL_INVALIDATED)
@@ -547,6 +756,10 @@ class FamilySchedulerV0:
                     trigger_at_utc=trigger,
                     offset_minutes=event.reminder_offset_minutes,
                     status="blocked",
+                    event_override_channel=event.event_override_channel,
+                    event_override_target_ref=event.event_override_target_ref,
+                    request_context_default_channel=event.request_context_default_channel,
+                    request_context_default_target_ref=event.request_context_default_target_ref,
                 )
                 self._store.save_reminder(reminder)
                 self._append_audit("scheduler", reminder_id, "schedule", ReasonCode.TZ_MISSING, dedupe_key)
@@ -564,6 +777,10 @@ class FamilySchedulerV0:
                 trigger_at_utc=trigger,
                 offset_minutes=event.reminder_offset_minutes,
                 status="scheduled",
+                event_override_channel=event.event_override_channel,
+                event_override_target_ref=event.event_override_target_ref,
+                request_context_default_channel=event.request_context_default_channel,
+                request_context_default_target_ref=event.request_context_default_target_ref,
             )
             self._store.save_reminder(reminder)
 
@@ -654,5 +871,9 @@ class FamilySchedulerV0:
             "reminder_offset_minutes": intent.get("reminder_offset_minutes"),
             "event_id": intent.get("event_id"),
             "event_timezone": intent.get("event_timezone"),
+            "event_override_channel": intent.get("event_override_channel"),
+            "event_override_target_ref": intent.get("event_override_target_ref"),
+            "request_context_default_channel": intent.get("request_context_default_channel"),
+            "request_context_default_target_ref": intent.get("request_context_default_target_ref"),
         }
         return sha256(json.dumps(stable, sort_keys=True).encode("utf-8")).hexdigest()

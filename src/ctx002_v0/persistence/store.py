@@ -6,12 +6,24 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Callable, Protocol
 
-from ..models import AuditRecord, DeliveryTarget, Event, Reminder
+from ..models import TARGET_REF_MAX_LENGTH, AuditRecord, DeliveryTarget, Event, Reminder
+from ..reason_codes import ReasonCode
 from .db import bootstrap_database
 
 
 class VersionConflictError(RuntimeError):
     pass
+
+
+class TargetRefValidationError(ValueError):
+    reason_code = ReasonCode.FAILED_CONFIG_INVALID_TARGET.value
+
+
+def _validate_target_ref_width(target_ref: str) -> None:
+    if len(target_ref) > TARGET_REF_MAX_LENGTH:
+        raise TargetRefValidationError(
+            f"{ReasonCode.FAILED_CONFIG_INVALID_TARGET.value}: target_ref length exceeds {TARGET_REF_MAX_LENGTH}"
+        )
 
 
 class StateStore(Protocol):
@@ -92,6 +104,12 @@ class StateStore(Protocol):
         trace_id: str,
         causation_id: str,
         source_adapter_attempt_id: str | None,
+        destination_source: str | None = None,
+        destination_resolution_status: str | None = None,
+        resolved_channel: str | None = None,
+        resolved_target_ref: str | None = None,
+        attempted_channel: str | None = None,
+        attempted_target_ref: str | None = None,
     ) -> None: ...
 
 
@@ -189,6 +207,7 @@ class InMemoryStateStore:
         self.reminders[reminder.dedupe_key] = reminder
 
     def save_delivery_target(self, target: DeliveryTarget) -> None:
+        _validate_target_ref_width(target.target_id)
         self.delivery_targets[target.person_id] = target
 
     def get_delivery_target(self, person_id: str) -> DeliveryTarget | None:
@@ -233,6 +252,12 @@ class InMemoryStateStore:
         trace_id: str,
         causation_id: str,
         source_adapter_attempt_id: str | None,
+        destination_source: str | None = None,
+        destination_resolution_status: str | None = None,
+        resolved_channel: str | None = None,
+        resolved_target_ref: str | None = None,
+        attempted_channel: str | None = None,
+        attempted_target_ref: str | None = None,
     ) -> None:
         self.delivery_attempts.append(
             {
@@ -251,6 +276,12 @@ class InMemoryStateStore:
                 "trace_id": trace_id,
                 "causation_id": causation_id,
                 "source_adapter_attempt_id": source_adapter_attempt_id,
+                "destination_source": destination_source,
+                "destination_resolution_status": destination_resolution_status,
+                "resolved_channel": resolved_channel,
+                "resolved_target_ref": resolved_target_ref,
+                "attempted_channel": attempted_channel,
+                "attempted_target_ref": attempted_target_ref,
             }
         )
 
@@ -295,6 +326,10 @@ class SqliteStateStore:
             all_day=bool(row["all_day"]),
             status=row["status"],
             source_message_ref=row["source_message_ref"],
+            event_override_channel=row["event_override_channel"],
+            event_override_target_ref=row["event_override_target_ref"],
+            request_context_default_channel=row["request_context_default_channel"],
+            request_context_default_target_ref=row["request_context_default_target_ref"],
         )
 
     @staticmethod
@@ -312,6 +347,10 @@ class SqliteStateStore:
             next_attempt_at_utc=datetime.fromisoformat(row["next_attempt_at_utc"])
             if row["next_attempt_at_utc"]
             else None,
+            event_override_channel=row["event_override_channel"],
+            event_override_target_ref=row["event_override_target_ref"],
+            request_context_default_channel=row["request_context_default_channel"],
+            request_context_default_target_ref=row["request_context_default_target_ref"],
         )
 
     def get_message_receipt(self, channel: str, conversation_id: str, message_id: str) -> dict | None:
@@ -418,8 +457,11 @@ class SqliteStateStore:
                 INSERT INTO event_versions(
                     event_id,version,title,start_at_local_iso,end_at_local_iso,all_day,event_timezone,
                     participants_json,audience_json,reminder_offset_minutes,source_message_ref,
-                    intent_hash,normalized_fields_hash,created_at_utc
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    intent_hash,normalized_fields_hash,
+                    event_override_channel,event_override_target_ref,
+                    request_context_default_channel,request_context_default_target_ref,
+                    created_at_utc
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     event.event_id,
@@ -435,6 +477,10 @@ class SqliteStateStore:
                     event.source_message_ref,
                     event.source_message_ref,
                     event.source_message_ref,
+                    event.event_override_channel,
+                    event.event_override_target_ref,
+                    event.request_context_default_channel,
+                    event.request_context_default_target_ref,
                     now,
                 ),
             )
@@ -473,8 +519,11 @@ class SqliteStateStore:
                 INSERT INTO event_versions(
                     event_id,version,title,start_at_local_iso,end_at_local_iso,all_day,event_timezone,
                     participants_json,audience_json,reminder_offset_minutes,source_message_ref,
-                    intent_hash,normalized_fields_hash,created_at_utc
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    intent_hash,normalized_fields_hash,
+                    event_override_channel,event_override_target_ref,
+                    request_context_default_channel,request_context_default_target_ref,
+                    created_at_utc
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     event.event_id,
@@ -490,6 +539,10 @@ class SqliteStateStore:
                     event.source_message_ref,
                     event.source_message_ref,
                     event.source_message_ref,
+                    event.event_override_channel,
+                    event.event_override_target_ref,
+                    event.request_context_default_channel,
+                    event.request_context_default_target_ref,
                     now,
                 ),
             )
@@ -532,8 +585,11 @@ class SqliteStateStore:
             INSERT OR REPLACE INTO reminders(
                 reminder_id,dedupe_key,event_id,event_version,recipient_target_id,offset_minutes,
                 trigger_at_utc,next_attempt_at_utc,attempts,status,recipient_timezone_snapshot,tz_source,
-                last_error_code,created_at_utc,updated_at_utc
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                last_error_code,
+                event_override_channel,event_override_target_ref,
+                request_context_default_channel,request_context_default_target_ref,
+                created_at_utc,updated_at_utc
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 reminder.reminder_id,
@@ -549,6 +605,10 @@ class SqliteStateStore:
                 "UNKNOWN",
                 "MISSING" if reminder.status == "blocked" else "EXPLICIT",
                 "TZ_MISSING" if reminder.status == "blocked" else None,
+                reminder.event_override_channel,
+                reminder.event_override_target_ref,
+                reminder.request_context_default_channel,
+                reminder.request_context_default_target_ref,
                 now,
                 now,
             ),
@@ -577,6 +637,7 @@ class SqliteStateStore:
         self.conn.commit()
 
     def save_delivery_target(self, target: DeliveryTarget) -> None:
+        _validate_target_ref_width(target.target_id)
         self.conn.execute(
             """
             INSERT OR REPLACE INTO delivery_targets(
@@ -653,7 +714,6 @@ class SqliteStateStore:
         output = []
         for idx, row in enumerate(rows, start=1):
             payload = json.loads(row["payload_json"]).get("payload", "")
-            from ..reason_codes import ReasonCode
 
             output.append(
                 AuditRecord(
@@ -704,14 +764,22 @@ class SqliteStateStore:
         trace_id: str,
         causation_id: str,
         source_adapter_attempt_id: str | None,
+        destination_source: str | None = None,
+        destination_resolution_status: str | None = None,
+        resolved_channel: str | None = None,
+        resolved_target_ref: str | None = None,
+        attempted_channel: str | None = None,
+        attempted_target_ref: str | None = None,
     ) -> None:
         self.conn.execute(
             """
             INSERT INTO delivery_attempts(
                 attempt_id, reminder_id, attempt_index, attempted_at_utc, status, reason_code,
                 provider_ref, provider_status_code, provider_error_text, provider_accept_only,
-                delivery_confidence, result_at_utc, trace_id, causation_id, source_adapter_attempt_id
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                delivery_confidence, result_at_utc, trace_id, causation_id, source_adapter_attempt_id,
+                destination_source, destination_resolution_status, resolved_channel, resolved_target_ref,
+                attempted_channel, attempted_target_ref
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 attempt_id,
@@ -729,6 +797,12 @@ class SqliteStateStore:
                 trace_id,
                 causation_id,
                 source_adapter_attempt_id,
+                destination_source,
+                destination_resolution_status,
+                resolved_channel,
+                resolved_target_ref,
+                attempted_channel,
+                attempted_target_ref,
             ),
         )
         self.conn.commit()
