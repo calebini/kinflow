@@ -391,6 +391,51 @@ class PerEventDestinationV019Tests(unittest.TestCase):
             self.assertIsNone(rows[1]["request_context_default_channel"])
             self.assertIsNone(rows[1]["request_context_default_target_ref"])
 
+    def test_mixed_shape_payload_prefers_flattened_fields_when_both_present(self) -> None:
+        from src.ctx002_v0.models import DeliveryTarget
+
+        with tempfile.TemporaryDirectory() as td:
+            db = Path(td) / "runtime.sqlite"
+            engine = FamilySchedulerV0(db_path=str(db), household_timezone="UTC")
+            engine.register_delivery_target(
+                DeliveryTarget(person_id="caleb", channel="discord", target_id="user:caleb", timezone="UTC")
+            )
+
+            created = engine.process_intent(
+                {
+                    "message_id": "m-dst-mixed-1",
+                    "correlation_id": "corr-m-dst-mixed-1",
+                    "action": "create",
+                    "title": "mixed-shape-create",
+                    "start_at_local": datetime(2026, 4, 25, 13, 0),
+                    "participants": ("caleb",),
+                    "audience": ("caleb",),
+                    "reminder_offset_minutes": 10,
+                    "confirmed": True,
+                    "event_timezone": "UTC",
+                    "event_override_channel": "whatsapp",
+                    "event_override_target_ref": "15551112222",
+                    "request_context_default_channel": "telegram",
+                    "request_context_default_target_ref": "tg-flat-caleb",
+                    "event_override": {"channel": "signal", "target_ref": "signal-should-not-win"},
+                    "request_context_default": {"channel": "discord", "target_ref": "discord-should-not-win"},
+                    "received_at_utc": datetime(2026, 4, 25, 12, 0, tzinfo=UTC),
+                }
+            )
+            self.assertEqual(created["status"], "ok")
+
+            store = SqliteStateStore.from_path(str(db))
+            row = store.conn.execute(
+                "SELECT event_override_channel, event_override_target_ref, "
+                "request_context_default_channel, request_context_default_target_ref "
+                "FROM event_versions WHERE event_id=? AND version=1",
+                (created["event_id"],),
+            ).fetchone()
+            self.assertEqual(row["event_override_channel"], "whatsapp")
+            self.assertEqual(row["event_override_target_ref"], "15551112222")
+            self.assertEqual(row["request_context_default_channel"], "telegram")
+            self.assertEqual(row["request_context_default_target_ref"], "tg-flat-caleb")
+
     def test_controlled_case_normal_audience_event_override_provenance(self) -> None:
         from src.ctx002_v0.models import DeliveryTarget
 
