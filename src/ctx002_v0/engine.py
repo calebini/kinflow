@@ -99,6 +99,45 @@ class FamilySchedulerV0:
             raise DestinationValidationError(f"{prefix} target_ref contains control characters")
         return channel, target_ref
 
+    @staticmethod
+    def _normalize_destination_payload_shape(intent: dict[str, Any]) -> dict[str, Any]:
+        """Backward-compatible nested destination payload normalization.
+
+        Live ingress paths may still provide destination fields as nested objects:
+        - event_override: {channel, target_ref}
+        - request_context_default: {channel, target_ref}
+
+        Engine internals are keyed by flattened fields. Normalize at process_intent
+        boundary so downstream validation/persistence stays deterministic.
+        """
+
+        normalized = dict(intent)
+
+        def _lift(prefix: str) -> None:
+            nested_key = prefix
+            channel_key = f"{prefix}_channel"
+            target_key = f"{prefix}_target_ref"
+
+            if channel_key in normalized or target_key in normalized:
+                return
+            if nested_key not in normalized:
+                return
+
+            nested = normalized.get(nested_key)
+            if nested is None:
+                normalized[channel_key] = None
+                normalized[target_key] = None
+                return
+            if not isinstance(nested, dict):
+                raise DestinationValidationError(f"{prefix} must be object or null")
+
+            normalized[channel_key] = nested.get("channel")
+            normalized[target_key] = nested.get("target_ref")
+
+        _lift("event_override")
+        _lift("request_context_default")
+        return normalized
+
     def _resolve_event_destination_fields(
         self,
         intent: dict,
@@ -139,6 +178,7 @@ class FamilySchedulerV0:
         )
 
     def process_intent(self, intent: dict) -> dict:
+        intent = self._normalize_destination_payload_shape(intent)
         message_id = intent["message_id"]
         correlation_id = intent.get("correlation_id") or f"corr:{message_id}"
         now_utc = intent.get("received_at_utc") or datetime.now(UTC)

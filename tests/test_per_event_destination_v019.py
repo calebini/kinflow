@@ -324,6 +324,73 @@ class PerEventDestinationV019Tests(unittest.TestCase):
             self.assertIsNone(reminder_row["request_context_default_channel"])
             self.assertIsNone(reminder_row["request_context_default_target_ref"])
 
+    def test_nested_destination_payload_normalizes_to_engine_fields(self) -> None:
+        from src.ctx002_v0.models import DeliveryTarget
+
+        with tempfile.TemporaryDirectory() as td:
+            db = Path(td) / "runtime.sqlite"
+            engine = FamilySchedulerV0(db_path=str(db), household_timezone="UTC")
+            engine.register_delivery_target(
+                DeliveryTarget(person_id="caleb", channel="discord", target_id="user:caleb", timezone="UTC")
+            )
+
+            created = engine.process_intent(
+                {
+                    "message_id": "m-dst-nested-1",
+                    "correlation_id": "corr-m-dst-nested-1",
+                    "action": "create",
+                    "title": "nested-destination-create",
+                    "start_at_local": datetime(2026, 4, 25, 12, 0),
+                    "participants": ("caleb",),
+                    "audience": ("caleb",),
+                    "reminder_offset_minutes": 10,
+                    "confirmed": True,
+                    "event_timezone": "UTC",
+                    "event_override": {"channel": "whatsapp", "target_ref": "15558887777"},
+                    "request_context_default": {"channel": "telegram", "target_ref": "tg-nested-caleb"},
+                    "received_at_utc": datetime(2026, 4, 25, 11, 0, tzinfo=UTC),
+                }
+            )
+            self.assertEqual(created["status"], "ok")
+
+            updated = engine.process_intent(
+                {
+                    "message_id": "m-dst-nested-2",
+                    "correlation_id": "corr-m-dst-nested-2",
+                    "action": "update",
+                    "event_id": created["event_id"],
+                    "title": "nested-destination-create",
+                    "start_at_local": datetime(2026, 4, 25, 12, 0),
+                    "participants": ("caleb",),
+                    "audience": ("caleb",),
+                    "reminder_offset_minutes": 10,
+                    "confirmed": True,
+                    "event_timezone": "UTC",
+                    "event_override": None,
+                    "request_context_default": None,
+                    "received_at_utc": datetime(2026, 4, 25, 11, 1, tzinfo=UTC),
+                }
+            )
+            self.assertEqual(updated["status"], "ok")
+            self.assertEqual(updated["event_version"], 2)
+
+            store = SqliteStateStore.from_path(str(db))
+            rows = store.conn.execute(
+                "SELECT version, event_override_channel, event_override_target_ref, "
+                "request_context_default_channel, request_context_default_target_ref "
+                "FROM event_versions WHERE event_id=? ORDER BY version",
+                (created["event_id"],),
+            ).fetchall()
+            self.assertEqual(len(rows), 2)
+            self.assertEqual(rows[0]["event_override_channel"], "whatsapp")
+            self.assertEqual(rows[0]["event_override_target_ref"], "15558887777")
+            self.assertEqual(rows[0]["request_context_default_channel"], "telegram")
+            self.assertEqual(rows[0]["request_context_default_target_ref"], "tg-nested-caleb")
+            self.assertIsNone(rows[1]["event_override_channel"])
+            self.assertIsNone(rows[1]["event_override_target_ref"])
+            self.assertIsNone(rows[1]["request_context_default_channel"])
+            self.assertIsNone(rows[1]["request_context_default_target_ref"])
+
     def test_controlled_case_normal_audience_event_override_provenance(self) -> None:
         from src.ctx002_v0.models import DeliveryTarget
 
