@@ -862,6 +862,62 @@ class DispatchCallbacks:
             "attempted_target_ref": destination.attempted_target_ref,
         }
 
+    @staticmethod
+    def _resolved_destination_provenance_is_complete(destination: DestinationResolution | None) -> bool:
+        if destination is None:
+            return False
+        if destination.destination_resolution_status != DESTINATION_RESOLUTION_STATUS_OK:
+            return False
+
+        required_values = (
+            destination.destination_source,
+            destination.resolved_channel,
+            destination.resolved_target_ref,
+            destination.attempted_channel,
+            destination.attempted_target_ref,
+        )
+        return all(isinstance(value, str) and value.strip() for value in required_values)
+
+    def _fail_closed_resolved_provenance_violation(
+        self,
+        *,
+        reminder: Reminder,
+        now: datetime,
+        destination: DestinationResolution,
+    ) -> bool:
+        self._persist_non_terminal_failure(
+            reminder,
+            ReasonCode.FAILED_CONFIG_INVALID_TARGET.value,
+            "resolved destination provenance incomplete",
+            now,
+            destination=destination,
+        )
+        self._append_delivery_audit(
+            reminder.reminder_id,
+            ReasonCode.FAILED_CONFIG_INVALID_TARGET,
+            (
+                f"terminal_decision=BLOCK;reason_code={ReasonCode.FAILED_CONFIG_INVALID_TARGET.value};"
+                "provenance_invariant=resolved_tuple_required;"
+                f"destination_source={destination.destination_source};"
+                f"destination_resolution_status={destination.destination_resolution_status};"
+                f"resolved_channel={destination.resolved_channel};"
+                f"resolved_target_ref={destination.resolved_target_ref};"
+                f"attempted_channel={destination.attempted_channel};"
+                f"attempted_target_ref={destination.attempted_target_ref}"
+            ),
+        )
+        self.emit(
+            {
+                "event": "dispatch_blocked",
+                "reason_code": ReasonCode.FAILED_CONFIG_INVALID_TARGET.value,
+                "reminder_id": reminder.reminder_id,
+                "destination_source": destination.destination_source,
+                "destination_resolution_status": destination.destination_resolution_status,
+                "blocked_by": "resolved_destination_provenance_incomplete",
+            }
+        )
+        return False
+
     def process_candidate(self, row: dict[str, Any]) -> bool:
         reminder: Reminder = row["reminder"]
         now = datetime.now(UTC)
@@ -912,6 +968,13 @@ class DispatchCallbacks:
                 }
             )
             return False
+
+        if not self._resolved_destination_provenance_is_complete(destination):
+            return self._fail_closed_resolved_provenance_violation(
+                reminder=reminder,
+                now=now,
+                destination=destination,
+            )
 
         resolved_channel = destination.resolved_channel or target.channel
         resolved_target_ref = destination.resolved_target_ref or target.target_id
