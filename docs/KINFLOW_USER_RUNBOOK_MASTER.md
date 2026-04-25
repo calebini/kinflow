@@ -153,7 +153,29 @@ event_override
 request_context_default
 recipient_default
 
-11.2 Operator responsibilities
+11.2 Accepted payload shapes (operator-critical)
+Ingress may provide destination fields in either shape:
+
+Flattened shape (engine-native):
+- event_override_channel
+- event_override_target_ref
+- request_context_default_channel
+- request_context_default_target_ref
+
+Nested shape (operator-friendly):
+- event_override: {channel, target_ref}
+- request_context_default: {channel, target_ref}
+
+Mixed-shape rule (deterministic):
+- If both flattened and nested are present, flattened fields win.
+- Nested fields are lifted only when flattened fields are absent.
+
+11.3 Clear semantics (deterministic)
+- event_override: null => event_override_channel=null + event_override_target_ref=null
+- request_context_default: null => request_context_default_channel=null + request_context_default_target_ref=null
+- Clearing event_override falls back to request_context_default then recipient_default.
+
+11.4 Operator responsibilities
 At event create/update time:
 
 derive ingress channel/context
@@ -163,14 +185,14 @@ do not rely on dispatch-time heuristic inference
 
 The engine consumes persisted routing inputs deterministically; it does not infer ingress context at send-time.
 
-11.3 Destination validation behavior
+11.5 Destination validation behavior
 Validation is dual-phase:
 write-time validation (mutation path)
 dispatch-time validation (authoritative pre-send check)
 
 Dispatch-time result is authoritative on disagreement.
 
-11.4 Failure behavior (deterministic)
+11.6 Failure behavior (deterministic)
 If destination cannot be resolved from any source:
 
 terminal failure
@@ -184,17 +206,17 @@ reason_code=FAILED_CONFIG_INVALID_TARGET
 canonical resolved destination fields remain null
 diagnostic attempted values may be emitted separately
 
-11.5 target_ref constraints
+11.7 target_ref constraints
 max length: 256
 non-empty trimmed string
 no control characters
 canonicalized through adapter validation path
 
-11.6 Replay / idempotency note
+11.8 Replay / idempotency note
 Destination tuple equivalence in this feature is feature-scoped and does not redefine global replay identity semantics.
 
-11.7 Concrete create/update payload examples
-Create with request-context default + per-event override:
+11.9 Concrete create/update payload examples
+Create with request-context default + per-event override (nested shape):
 {
 "title": "Canary Swim",
 "datetime": "2026-04-25T19:30:00",
@@ -213,28 +235,36 @@ Create with request-context default + per-event override:
 }
 }
 
-
-Update to set/replace override:
-
+Update to set/replace override (flattened shape):
 {
 "event_id": "evt-123",
 "reminder_offset_minutes": 45,
-"request_context_default": {
-"channel": "whatsapp",
-"target_ref": "whatsapp:120363425701060269@g.us"
-},
-"event_override": {
-"channel": "whatsapp",
-"target_ref": "whatsapp:120363425701060269@g.us"
+"request_context_default_channel": "whatsapp",
+"request_context_default_target_ref": "120363425701060269@g.us",
+"event_override_channel": "whatsapp",
+"event_override_target_ref": "+33750124393"
 }
-}
-
 
 Update to clear override (falls back to precedence chain):
-
 {
 "event_id": "evt-123",
 "event_override": null
+}
+
+Controlled canary payload (mixed shape; flattened wins):
+{
+"title": "Destination Canary",
+"datetime": "2026-04-25T20:00:00",
+"timezone": "Europe/Paris",
+"participants": ["caleb"],
+"audience": ["caleb"],
+"reminder_offset_minutes": 8,
+"request_context_default_channel": "whatsapp",
+"request_context_default_target_ref": "120363425701060269@g.us",
+"event_override_channel": "whatsapp",
+"event_override_target_ref": "+33750124393",
+"request_context_default": {"channel": "telegram", "target_ref": "tg-ignored-because-flat-present"},
+"event_override": {"channel": "signal", "target_ref": "signal-ignored-because-flat-present"}
 }
 
 
@@ -272,8 +302,42 @@ print(dict(row) if row else None)
 con.close()
 PY
 
+12.5 Destination persistence + provenance check for one event_id
+python3 - <<'PY'
+import sqlite3
+EVENT_ID = 'evt-0041'  # replace
+con = sqlite3.connect('/home/agent/projects/apps/kinflow/.anchor_runtime.sqlite')
+con.row_factory = sqlite3.Row
+ev = con.execute("""
+SELECT event_id, version, audience_json,
+       event_override_channel, event_override_target_ref,
+       request_context_default_channel, request_context_default_target_ref
+FROM event_versions
+WHERE event_id=?
+ORDER BY version DESC LIMIT 1
+""", (EVENT_ID,)).fetchone()
+rm = con.execute("""
+SELECT reminder_id, status,
+       event_override_channel, event_override_target_ref,
+       request_context_default_channel, request_context_default_target_ref
+FROM reminders
+WHERE event_id=?
+ORDER BY rowid DESC LIMIT 1
+""", (EVENT_ID,)).fetchone()
+at = con.execute("""
+SELECT attempt_id, reason_code, status,
+       destination_source, resolved_target_ref, attempted_target_ref
+FROM delivery_attempts
+WHERE reminder_id LIKE ?
+ORDER BY attempted_at_utc DESC LIMIT 1
+""", (f'rem-{EVENT_ID}-%',)).fetchone()
+print('event_versions:', dict(ev) if ev else None)
+print('reminders:', dict(rm) if rm else None)
+print('delivery_attempts:', dict(at) if at else None)
+con.close()
+PY
 
-12.5 Verify destination precedence evidence in logs
+12.6 Verify destination precedence evidence in logs
 bash
 journalctl -u kinflow-daemon.service -n 500 -o cat | rg 'destination_source|FAILED_CONFIG_INVALID_TARGET|cycle_summary'
 
