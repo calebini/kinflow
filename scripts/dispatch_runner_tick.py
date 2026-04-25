@@ -193,7 +193,7 @@ def run_tick(
 
     send_logs: list[dict[str, Any]] = []
 
-    def provider(reminder) -> bool:
+    def provider(reminder) -> dict[str, Any]:
         target = targets.get(reminder.recipient_id)
         if target is None:
             send_logs.append(
@@ -203,7 +203,14 @@ def run_tick(
                     "error": "missing_active_delivery_target",
                 }
             )
-            return False
+            return {
+                "ok": False,
+                "provider_ref": None,
+                "provider_status_code": "missing_target",
+                "provider_error_text": "missing_active_delivery_target",
+                "provider_accept_only": False,
+                "delivery_confidence": "none",
+            }
 
         tz_name = target.get("timezone") or "UTC"
         local_time = reminder.trigger_at_utc.astimezone(ZoneInfo(tz_name)).strftime("%H:%M")
@@ -240,8 +247,20 @@ def run_tick(
             )
             log["fallback_audit_marker_emitted"] = True
 
+        provider_ref = None
+        parsed = log.get("parsed")
+        if isinstance(parsed, dict):
+            provider_ref = parsed.get("messageId") or parsed.get("id") or parsed.get("providerRef")
+
         send_logs.append(log)
-        return ok
+        return {
+            "ok": ok,
+            "provider_ref": provider_ref,
+            "provider_status_code": str(log.get("returncode")),
+            "provider_error_text": (log.get("stderr") or "").strip() or None,
+            "provider_accept_only": bool(ok and not provider_ref),
+            "delivery_confidence": "provider_confirmed" if ok and provider_ref else ("provider_accepted" if ok else "none"),
+        }
 
     now = _now_utc()
     outcomes = scheduler.attempt_due_deliveries(now, provider=provider)
