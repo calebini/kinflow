@@ -16,8 +16,8 @@ run_code: 4359
 | `FRZ-COMMS-V018` | Comms adapter contract master | v0.1.8 | `/home/agent/projects/apps/kinflow/specs/KINFLOW_COMMS_ADAPTER_CONTRACT_MASTER_v0.1.7.md` | `82833506d7d65e2528c027e95b9ed650f50b593d2e7ecbba94b8425be827f01f` |
 | `FRZ-DAEMON-V014` | Daemon runtime contract master | v0.1.4 | `/home/agent/projects/apps/kinflow/specs/KINFLOW_DAEMON_RUNTIME_CONTRACT_MASTER_v0.1.4.md` | `50111cf0173b2023ad92a0c7b08ceae0e85163d3fc117234dc8d400ac8beaded` |
 | `FRZ-OCADAPTER-V025` | OC adapter implementation spec master | v0.2.5 | `/home/agent/projects/apps/kinflow/specs/KINFLOW_OC_ADAPTER_IMPLEMENTATION_SPEC_MASTER_v0.2.4.md` | `23b99efcb3bfc8b547a2a8e2a67e58fa226c7f02ce689da64d365f5b7adabd4d` |
-| `FRZ-REASON-V103` | Reason-code canonical registry | v1.0.3 | `/home/agent/projects/apps/kinflow/specs/KINFLOW_REASON_CODES_CANONICAL.md` | `7aa08628acf0633480c5f496fc632f24226cdfabad8aa8b9c34ab68e37d04742` |
-| `FRZ-CHECKLIST-MASTER` | Production plan checklist master | master-unversioned | `/home/agent/projects/apps/kinflow/specs/KINFLOW_PRODUCTION_PLAN_CHECKLIST_MASTER.md` | `cfdff1107bebdef63ccd6ea07d97ad68f59a85117a1bfff811f4aa1c39e396f9` |
+| `FRZ-REASON-V106` | Reason-code canonical registry | v1.0.6 | `/home/agent/projects/apps/kinflow/specs/KINFLOW_REASON_CODES_CANONICAL.md` | `f6472addbf19a97c589b8b49a6334fbbb5e0678b670ca47e65d923f963bc02e6` |
+| `FRZ-CHECKLIST-MASTER` | Production plan checklist master | master-unversioned | `/home/agent/projects/apps/kinflow/specs/KINFLOW_PRODUCTION_PLAN_CHECKLIST_MASTER.md` | `79f272295696a93cd94bfc11cc45ff4b19e412b9fa77ed836b178f6e1df81e50` |
 
 
 ## 1.1) Authority model and checklist binding semantics

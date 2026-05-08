@@ -154,7 +154,9 @@ Every lifecycle step emits append-only, correlated audit events with reason code
 ## Key Files
 
 - `src/ctx002_v0/engine.py` — deterministic lifecycle engine
+- `src/ctx002_v0/contract_versions.py` — runtime declarations for implemented Cortext1 spec/contract versions
 - `src/ctx002_v0/daemon.py` — P2-A daemon baseline primitives (contract v0.1.4 aligned)
+- `src/ctx002_v0/tickerd_runtime.py` — Kinflow adapter layer for the external `tickerd` daemon component
 - `src/ctx002_v0/models.py` — Event/Reminder/Delivery contracts
 - `src/ctx002_v0/reason_codes.py` — canonical reason-code enums
 - `src/ctx002_v0/persistence/db.py` — P1-A migration/bootstrap/FK/checksum/dirty enforcement primitives
@@ -166,6 +168,7 @@ Every lifecycle step emits append-only, correlated audit events with reason code
 - `tests/test_p1b_repo_integration.py` — P1-B repository integration suite
 - `tests/test_p1c_recovery_capture_idempotency.py` — P1-C recovery/capture/idempotency invariant suite
 - `tests/test_p2a_daemon_baseline.py` — P2-A daemon baseline contract conformance suite
+- `tests/test_tickerd_adapter.py` — Kinflow adapter conformance and mode/identity checks against `tickerd`
 - `docs/KINFLOW_V0_IMPLEMENTATION_NOTES.md` — implementation mapping
 - `docs/KINFLOW_V0_VERIFICATION_EVIDENCE.md` — lint/test evidence
 - `docs/KINFLOW_V0_KNUTH_LANDING_HANDOFF.md` — landing handoff
@@ -177,6 +180,12 @@ Every lifecycle step emits append-only, correlated audit events with reason code
 - `docs/KINFLOW_P1C_RECOVERY_CAPTURE_IDEMPOTENCY_NOTES.md` — P1-C recovery/capture/idempotency notes
 - `docs/KINFLOW_P1C_VERIFICATION_EVIDENCE.md` — P1-C verification evidence
 - `docs/KINFLOW_P2A_DAEMON_BASELINE_NOTES.md` — P2-A daemon baseline implementation notes
+
+## Daemon Runtime Migration
+
+Kinflow now consumes `tickerd` from the sibling Cortext component repo (`../tickerd`) as the reusable daemon kernel. Kinflow keeps reminder models, persistence, migrations, environment names, reason codes, provider/OpenClaw bindings, WhatsApp/channel behavior, message rendering, idempotency policy, health paths, and deployment policy in this repo.
+
+The new foreground entrypoint is `scripts/tickerd_daemon_run.py`. The legacy `scripts/daemon_run.py` path remains as a temporary compatibility/reference runner while the adapter path is exercised.
 - `docs/KINFLOW_P2A_VERIFICATION_EVIDENCE.md` — P2-A contract verification evidence and matrix
 - `docs/KINFLOW_PHASE1_EXIT_EVIDENCE_MASTER.md` — Phase 1 exit criteria assessment and evidence matrix
 - `docs/KINFLOW_PHASE2_EXIT_EVIDENCE_MASTER.md` — Phase 2 consolidated exit evidence and gate lineage (P2-B + P2-C)
@@ -202,6 +211,7 @@ Every lifecycle step emits append-only, correlated audit events with reason code
 - `docs/KINFLOW_ARCH_DECISION_ISSUE3_ADAPTER_RESULTS_VS_DELIVERY_ATTEMPTS_2026-03-24.md` — authoritative Issue #3 architecture decision (single-store persistence model)
 - `docs/KINFLOW_SPEC_BASELINE_DECLARATION_POST_ISSUE3_2026-03-24.md` — post-Issue #3 re-baseline declaration for P2-B continuation gate
 - `specs/KINFLOW_CONTRACT_FREEZE_MANIFEST_PHASE0_5.md` — Phase 0.5 canonical freeze manifest (pinned versions + hashes + change-control)
+- `scripts/verify_contract_pins.py` — one-way freeze manifest hash/version verification gate
 - `docs/KINFLOW_R5_RECIPROCAL_PIN_MODEL_CORRECTION_REPORT.md` — reciprocal freeze↔checklist hash-cycle correction to one-way authoritative pin model
 
 ---
@@ -210,11 +220,13 @@ Every lifecycle step emits append-only, correlated audit events with reason code
 
 Run from project root:
 ```bash
+python3 scripts/verify_contract_pins.py
 python3 -m compileall -q src scripts tests && echo LINT_PASS_NORMALIZED
 PYTHONPATH=src python3 -m unittest discover -s tests -p 'test_*.py' -v
 PYTHONPATH=src python3 -m unittest -v tests.test_p1a_schema_migrations
 ```
 Expected:
+- `CONTRACT_PIN_VERIFY_PASS`
 - `LINT_PASS_NORMALIZED`
 - `Ran 9 tests ...`
 - `OK`

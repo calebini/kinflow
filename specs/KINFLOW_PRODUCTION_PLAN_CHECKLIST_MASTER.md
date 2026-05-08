@@ -34,6 +34,7 @@ Phase 0.5 — Contract Freeze Gate
 [x] Reason-code enum version/hash pinned
 [x] Comms contract version pinned
 [x] Persistence schema version pinned
+[x] Runtime implemented-version declarations documented and CI pin verifier installed
 [x] Change-control rule set documented (what may change, who approves, re-freeze trigger)
 
 Exit Gate: PASS — Freeze manifest approved; implementation may proceed.
@@ -46,6 +47,7 @@ Phase 0.5 completion annotations (concise):
 - Freeze manifest installed via instruction `KINFLOW-FREEZE-MANIFEST-INSTALL-20260321-001` (run_code 4323).
 - Change-control rules + deterministic block conditions documented in manifest.
 - Authority model: checklist references freeze by stable artifact-path pointer; any displayed freeze hash in this checklist is informational only and cannot hard-fail gate checks.
+- Preservation rule: runtime declarations, contract tests, and `scripts/verify_contract_pins.py` keep the spec/version/hash practice active for future Cortext1 work.
 
 ---
 

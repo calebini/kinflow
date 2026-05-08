@@ -23,6 +23,9 @@ Canonical dispatch path: daemon process
 Cron tick dispatch path: fallback only
 Steady-state dual-active mode (daemon + cron dispatch simultaneously) is forbidden
 
+Implementation migration note:
+The daemon process may be implemented as a Kinflow service-specific adapter over the external Cortext `tickerd` component. The adapter boundary does not move Kinflow domain behavior, provider bindings, persistence, migrations, health paths, or deployment policy out of Kinflow.
+
 5) Supervisor Contract (Canonical)
 5.1 Required supervisor
 systemd is mandatory for v0.1.x

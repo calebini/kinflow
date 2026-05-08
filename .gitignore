@@ -3,6 +3,7 @@
 __pycache__/
 *.pyc
 *.pyo
+.DS_Store
 
 # Local runtime data
 .anchor_runtime.sqlite

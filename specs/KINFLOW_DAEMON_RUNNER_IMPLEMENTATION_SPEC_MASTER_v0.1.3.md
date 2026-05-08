@@ -20,6 +20,9 @@ Required script:
 Runner execution mode:
 long-lived foreground process (systemd owns lifecycle)
 
+Implementation migration note:
+Kinflow may run the foreground daemon through `scripts/tickerd_daemon_run.py`, which wires Kinflow storage, mode mapping, health output, event output, singleton ownership, and dispatch callbacks into the external Cortext `tickerd` RuntimeKernel/ForegroundRunner. `scripts/daemon_run.py` remains a temporary compatibility/reference path during cutover.
+
 4) Startup Contract (Runner Layer, Ordered)
 Runner MUST execute startup in this order:
 

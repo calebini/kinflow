@@ -9,6 +9,7 @@ from .engine import FamilySchedulerV0
 from .models import DeliveryTarget
 from .oc_adapter import OpenClawGatewayAdapter
 from .reason_codes import ReasonCode
+from .tickerd_runtime import KinflowModeReader, KinflowReconciler, KinflowWorkItemProcessor, KinflowWorkItemSource
 
 __all__ = [
     "FamilySchedulerV0",
@@ -20,4 +21,8 @@ __all__ = [
     "FairnessTracker",
     "ReconnectState",
     "validate_daemon_config",
+    "KinflowModeReader",
+    "KinflowReconciler",
+    "KinflowWorkItemProcessor",
+    "KinflowWorkItemSource",
 ]
