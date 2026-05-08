@@ -25,7 +25,7 @@ ensure_tickerd_importable()
 
 from tickerd.config import TickerdConfig  # noqa: E402
 from tickerd.kernel import RuntimeKernel  # noqa: E402
-from tickerd.locks import FileLockBackend  # noqa: E402
+from tickerd.locks import FileLockBackend, OwnershipError  # noqa: E402
 from tickerd.runner import ForegroundRunner  # noqa: E402
 from tickerd.types import HealthFailMode, ReconnectStrategy  # noqa: E402
 
@@ -94,6 +94,7 @@ def run(*, max_cycles: int | None = None, install_signal_handlers: bool = True) 
     owner_id = f"{hostname}:{pid}:{int(time.time())}"
     trace_id = f"tickerd-runner-{pid}-{int(time.time() * 1000)}"
     cfg = None
+    store: SqliteStateStore | None = None
     try:
         cfg = load_runner_config()
         validate_version_bindings(cfg)
@@ -145,6 +146,31 @@ def run(*, max_cycles: int | None = None, install_signal_handlers: bool = True) 
             }
         )
         return result.exit_code
+    except OwnershipError as exc:
+        fail_token = "LOCK_ACQUIRE_FAILED"
+        _emit(
+            {
+                "event": "runner_fail_stop",
+                "fail_token": fail_token,
+                "error": str(exc),
+                "trace_id": trace_id,
+                "pid": pid,
+                "hostname": hostname,
+                "owner_id": owner_id,
+            }
+        )
+        if cfg is not None:
+            try:
+                write_health(
+                    cfg,
+                    state="failed",
+                    is_ready=False,
+                    last_successful_cycle_id=None,
+                    last_failure_reason_code=fail_token,
+                )
+            except Exception:
+                pass
+        return 1
     except RunnerExit as exc:
         _emit(
             {
@@ -169,6 +195,9 @@ def run(*, max_cycles: int | None = None, install_signal_handlers: bool = True) 
             except Exception:
                 pass
         return 1
+    finally:
+        if store is not None:
+            store.conn.close()
 
 
 if __name__ == "__main__":
