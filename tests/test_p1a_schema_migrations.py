@@ -5,7 +5,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from ctx002_v0.persistence import (
+from kinflow.persistence import (
     DEFAULT_MIGRATIONS_DIR,
     DirtyMigrationError,
     MigrationChecksumMismatchError,

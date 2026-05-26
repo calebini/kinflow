@@ -11,8 +11,8 @@ from pathlib import Path
 from unittest.mock import patch
 
 from scripts import tickerd_daemon_run
-from src.ctx002_v0.models import DeliveryTarget, Event, Reminder
-from src.ctx002_v0.persistence.store import SqliteStateStore
+from kinflow.models import DeliveryTarget, Event, Reminder
+from kinflow.persistence.store import SqliteStateStore
 
 
 def _env(root: Path, *, max_fatal: int = 3) -> dict[str, str]:

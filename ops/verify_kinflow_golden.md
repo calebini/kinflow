@@ -1,17 +1,17 @@
-# CTX-002 Golden Verification Script
+# Kinflow Golden Verification Script
 
 ## Files
 
-- Script: `/home/agent/projects/apps/kinflow/ops/verify_ctx002_golden.sh`
-- Env template: `/home/agent/projects/apps/kinflow/ops/verify_ctx002_golden.env.example`
+- Script: `/home/agent/projects/apps/kinflow/ops/verify_kinflow_golden.sh`
+- Env template: `/home/agent/projects/apps/kinflow/ops/verify_kinflow_golden.env.example`
 
 ## Purpose
 
-Runs one canonical CTX-002 verification flow with deterministic stage ordering and PASS/FAIL verdict emission.
+Runs one canonical Kinflow verification flow with deterministic stage ordering and PASS/FAIL verdict emission.
 
 Ordered stages:
 1. Compile check (`daemon_run.py`)
-2. Targeted daemon-runner CTX-002 tests
+2. Targeted daemon-runner tests
 3. Daemon restart (`sudo systemctl restart kinflow-daemon.service`)
 4. Journal health evaluation (must include `cycle_summary` + `cycle_success=true`; fails on traceback/uncaught/fatal boundary failure signals)
 5. Optional canary hook (`CANARY_COMMAND`) or SKIPPED when unset
@@ -22,7 +22,7 @@ Ordered stages:
 
 Each run writes a timestamped directory:
 
-`/home/agent/projects/_backlog/output/kinflow_verify_ctx002golden<UTCSTAMP>/`
+`/home/agent/projects/_backlog/output/kinflow_verify_golden<UTCSTAMP>/`
 
 Minimum artifacts generated per run:
 - `compile_check.log`
@@ -48,29 +48,29 @@ If sudo is unavailable in full mode, stage `daemon_restart` fails with explicit 
 ### Minimal run
 
 ```bash
-/home/agent/projects/apps/kinflow/ops/verify_ctx002_golden.sh
+/home/agent/projects/apps/kinflow/ops/verify_kinflow_golden.sh
 ```
 
 ### Run with env template
 
 ```bash
 set -a
-source /home/agent/projects/apps/kinflow/ops/verify_ctx002_golden.env.example
+source /home/agent/projects/apps/kinflow/ops/verify_kinflow_golden.env.example
 set +a
-/home/agent/projects/apps/kinflow/ops/verify_ctx002_golden.sh
+/home/agent/projects/apps/kinflow/ops/verify_kinflow_golden.sh
 ```
 
 ### Run with canary command
 
 ```bash
-CANARY_COMMAND='python3 /home/agent/projects/apps/kinflow/scripts/canary_fire.py --label ctx002-golden' \
-/home/agent/projects/apps/kinflow/ops/verify_ctx002_golden.sh
+CANARY_COMMAND='python3 /home/agent/projects/apps/kinflow/scripts/canary_fire.py --label kinflow-golden' \
+/home/agent/projects/apps/kinflow/ops/verify_kinflow_golden.sh
 ```
 
 ### Non-mutating tooling dry-run (for script validation)
 
 ```bash
-VERIFY_CTX002_GOLDEN_DRY_RUN=1 /home/agent/projects/apps/kinflow/ops/verify_ctx002_golden.sh
+VERIFY_KINFLOW_GOLDEN_DRY_RUN=1 /home/agent/projects/apps/kinflow/ops/verify_kinflow_golden.sh
 ```
 
 Dry-run mode skips destructive restart execution and is intended for script validation evidence. Because mandatory runtime stages are gated by restart/health, dry-run is expected to produce final verdict `FAIL`.

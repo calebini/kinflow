@@ -4,190 +4,136 @@ run_code: 4322
 installed_utc: 2026-03-21T17:17:50Z
 status: canonical
 
-Kinflow Production Plan Checklist (Master List)
-Global Rule — Git Discipline (Phases 1–7)
-No phase exits unless:
-all in-scope changes committed
-pushed to remote
-PR/direct-land reference captured
-evidence artifacts linked
-rollback reference (commit/tag) recorded
+# Kinflow Production Plan Checklist
 
----
+This checklist tracks production readiness at the level of required capability and gate status. Historical evidence packets are not active source material; executable tests and the freeze manifest are the current verification surface.
 
-Phase 0 — Baseline Lock
-[x] Canonical specs installed + linked (requirements, architecture, persistence, comms adapter)
-[x] Pointer integrity verified (README + backlog board)
-[x] Open spec deltas resolved or explicitly deferred
-Exit Gate: PASS — All canonical artifact hashes pinned; no unresolved blocking deltas.
-Evidence:
-- `/home/agent/projects/apps/kinflow/docs/KINFLOW_FREEZE_MANIFEST_INSTALL_4323_EVIDENCE.md`
-- `/home/agent/projects/apps/kinflow/specs/KINFLOW_CONTRACT_FREEZE_MANIFEST_PHASE0_5.md`
+## Global Rules
 
-Phase 0 completion annotations (concise):
-- Baseline canonical pointers installed and verified in README + backlog board (run_code 4323 evidence).
-- Pinned artifact hash table captured in freeze install evidence.
+- In-scope changes must be committed before phase exit.
+- Public behavior changes must update the relevant spec or contract version.
+- Runtime implemented-version declarations must match the freeze manifest.
+- Pinned artifact changes require a freeze-manifest rebind.
+- Phase exits require pin verification and the unittest suite to pass.
 
----
+Required local gates:
 
-Phase 0.5 — Contract Freeze Gate
-[x] Reason-code enum version/hash pinned
-[x] Comms contract version pinned
-[x] Persistence schema version pinned
-[x] Runtime implemented-version declarations documented and CI pin verifier installed
-[x] Change-control rule set documented (what may change, who approves, re-freeze trigger)
+```bash
+python3 scripts/verify_contract_pins.py
+PYTHONPATH=src python3 -m unittest discover -s tests -p 'test_*.py' -v
+```
 
-Exit Gate: PASS — Freeze manifest approved; implementation may proceed.
-Evidence:
-- `/home/agent/projects/apps/kinflow/specs/KINFLOW_CONTRACT_FREEZE_MANIFEST_PHASE0_5.md`
-- freeze_authority_pointer: `artifact_path=/home/agent/projects/apps/kinflow/specs/KINFLOW_CONTRACT_FREEZE_MANIFEST_PHASE0_5.md`
-- freeze_hash_display (informational, non-gating): `optional-display-only; authoritative hash is freeze §1`
+## Phase 0 - Baseline Lock
 
-Phase 0.5 completion annotations (concise):
-- Freeze manifest installed via instruction `KINFLOW-FREEZE-MANIFEST-INSTALL-20260321-001` (run_code 4323).
-- Change-control rules + deterministic block conditions documented in manifest.
-- Authority model: checklist references freeze by stable artifact-path pointer; any displayed freeze hash in this checklist is informational only and cannot hard-fail gate checks.
-- Preservation rule: runtime declarations, contract tests, and `scripts/verify_contract_pins.py` keep the spec/version/hash practice active for future Cortext1 work.
+Status: PASS
 
----
+- Requirements baseline installed.
+- Architecture baseline installed.
+- Persistence, comms, daemon, OC adapter, reason-code, and checklist artifacts pinned.
+- Freeze manifest is the authoritative hash source.
 
-Phase 1 — Persistence Core
-[x] SQLite schema + migrations implemented
-[x] FK/enum enforcement active
-[x] Repository interfaces integrated into engine
-[x] Idempotency receipts + window logic implemented
-[x] Version guard + conflict handling (VERSION_CONFLICT_RETRY) implemented
-[x] Recovery ordering + bounded batching implemented
-[x] Capture-only persistence/runtime constraints implemented
+## Phase 0.5 - Contract Freeze Gate
 
-Exit Gate: PASS — Durability/replay/version-conflict/recovery tests pass with zero invariant violations.
-Evidence: `/home/agent/projects/apps/kinflow/docs/KINFLOW_PHASE1_EXIT_EVIDENCE_MASTER.md`
-sha256: `e59ea46fc819976545f6ef73ccdc8d2f683bed784b8b96d0d546e566e6b1b3b8`
-Git Gate: PASS.
+Status: PASS
 
-Phase 1 completion annotations (concise):
-- P1-A landed refs: impl `77a25e6`; landing `2e3f380`
-- P1-B landed refs: impl `50e6767`; landing `e9ff393`
-- P1-C + P1-E closure refs: impl `dba4853` + `4289f94`; landing `2d79983`
+- Reason-code registry pinned.
+- Comms contract pinned.
+- Persistence spec pinned.
+- Runtime declarations and pin verifier installed.
+- One-way freeze authority documented.
 
----
+## Phase 1 - Persistence Core
 
-Phase 2 consolidated exit status (P2-A/P2-B/P2-C)
-Result: PASS
-Evidence:
-- `/home/agent/projects/apps/kinflow/docs/KINFLOW_PHASE2_EXIT_EVIDENCE_MASTER.md`
-- `/home/agent/projects/apps/kinflow/docs/KINFLOW_P2B_OC_ADAPTER_CONFORMANCE_EVIDENCE.md` (commit `90474f6`)
-- `/home/agent/projects/apps/kinflow/docs/KINFLOW_P2C_E2E_RUNTIME_VERIFICATION_REPORT.md` (commit `d4c079c`)
-Gate lineage:
-- `P2B_IMPLEMENTATION_READY_FOR_LANDING: YES`
-- `P2C_VERIFICATION_GATE: GO`
-- `PHASE2_EXIT_READY: YES`
+Status: PASS
 
----
+- SQLite schema and migrations implemented.
+- FK and enum enforcement active.
+- Repository interfaces integrated into the engine.
+- Idempotency receipts and replay windows implemented.
+- Version-conflict handling implemented.
+- Recovery ordering and bounded batching implemented.
+- Capture-only runtime constraints implemented.
 
-Phase 2 — Daemonization
-[ ] Scheduler heartbeat loop implemented
-[ ] Reconciliation loop implemented
-[ ] Graceful shutdown + transactional safety implemented
-[ ] Runtime config validation implemented
-[ ] Health/state reporting wired
-[ ] Structured logs with trace/causation IDs emitted
+## Phase 2 - Daemonization
 
-Exit Gate: Restart/failure drills pass; deterministic progression; no duplicate visible sends.
-Git Gate: Required.
+Status: PASS for implemented baseline and adapter-facing runtime paths.
 
----
+- Daemon runtime primitives implemented.
+- Reconciliation loop behavior covered by tests and probes.
+- Graceful shutdown and transactional safety covered by runner tests.
+- Runtime config validation implemented.
+- Health/state reporting wired.
+- `tickerd` adapter path is the preferred foreground daemon integration.
 
-Phase 3 — Comms Adapter Integration (OpenClaw first)
-[ ] CommsAdapter interface implemented in runtime path
-[ ] OpenClawGatewayAdapter implemented
-[ ] Mapping precedence contract enforced
-[ ] Replay/dedupe contract enforced
-[ ] Status/confidence coupling enforced
-[ ] Capability allowlist + block behavior enforced
-[ ] Correlation propagation enforced
+## Phase 3 - Comms Adapter Integration
 
-Exit Gate: 0 adapter contract violations across evidence suite; no mapping drift.
-Git Gate: Required.
+Status: PASS for current OpenClaw integration baseline.
 
----
+- OpenClaw adapter integration implemented.
+- Mapping precedence enforced.
+- Replay and dedupe behavior covered by contract tests.
+- Status/confidence coupling enforced.
+- Capability and routing failures fail closed.
+- Correlation propagation covered.
 
-Phase 4 hardening kickoff status
-Result: GO
-Evidence:
-- `/home/agent/projects/apps/kinflow/docs/KINFLOW_PHASE4_HARDENING_KICKOFF_REPORT.md`
-- `/home/agent/projects/apps/kinflow/docs/KINFLOW_OPERATOR_RUNBOOK_PHASE4.md`
-- `/home/agent/projects/apps/kinflow/docs/KINFLOW_ROLLBACK_RUNBOOK_PHASE4.md`
-Gate lineage:
-- `PHASE4_HARDENING_GATE: GO`
-- `READY_FOR_PHASE5: YES`
+## Phase 4 - Operational Readiness
 
----
+Status: IN PROGRESS
 
-Phase 4 — End-to-End Operational Readiness
-[ ] Create flow end-to-end verified
-[ ] Update invalidation/regeneration verified
-[ ] Cancel suppression verified
-[ ] Retry/recovery/write-amplification invariants validated
-[ ] Operator runbook complete
-[ ] Incident playbook complete
+- Operator scripts exist for create, update, cancel, and smoke flows.
+- Operations and rollback docs are current.
+- Hardening drill runner exists.
+- Incident playbook exists under `ops/playbooks/`.
 
-Exit Gate: All E2E flows pass with deterministic receipts and full audit reconstruction.
-Git Gate: Required.
+Remaining exit work:
 
----
-Phase 5 — CI/CD + Migration Hardening
-[ ] CI required checks enforced
-[ ] Branch protections enabled
-[ ] Conformance artifacts published per build
-[ ] Version/changelog policy enforced
-[ ] Data migration rehearsal completed:
-[ ] backup/restore
-[ ] forward migration
-[ ] rollback with audit integrity preserved
+- Validate representative create, update, cancel, retry, and recovery flows against intended deployment environment.
+- Confirm operator docs match the actual runtime invocation path.
+- Capture current rollback receipt for production-bound deployment.
 
-Exit Gate: CI policy active + migration rehearsal clean.
-Git Gate: Required.
+## Phase 5 - CI/CD And Migration Hardening
 
----
+Status: IN PROGRESS
 
-Phase 5.5 — Observability Minimum Bar
-[ ] Dashboard live with:
-[ ] duplicate-send rate
-[ ] retry-exhaustion rate
-[ ] blocked/TZ_MISSING rate
-[ ] Alert thresholds configured
-[ ] Thresholds validated against realistic traffic shape
+- CI workflow exists.
+- Migration rehearsal script exists.
 
-Exit Gate: Metrics and alerts are operational with acceptable noise characteristics.
-Git Gate: Required (for config/runbook changes).
+Remaining exit work:
 
----
+- Confirm branch protection and required checks.
+- Confirm backup, forward migration, and rollback rehearsal against production-like state.
+- Publish current changelog or release notes when a release is cut.
 
-Phase 6 — Canary Rollout
-[ ] Limited traffic canary enabled
-[ ] Real-path telemetry monitored
-[ ] Incident response dry-run executed during canary
+## Phase 5.5 - Observability Minimum Bar
 
-Exit Gate: Canary reliability thresholds met; no Sev-1/2 contract violations.
-Git Gate: Required.
+Status: IN PROGRESS
 
----
+- Alert policy exists.
+- SQLite signal query pack exists.
+- Observability probe exists.
 
-Phase 7 — Full Production
-[ ] Full rollout enabled
-[ ] Post-launch coupling audit complete
-[ ] Deferred T5 evolution items triaged/planned
-[ ] SLO tracking active for soak window
+Remaining exit work:
 
-Exit Gate: SLO stability confirmed over soak period; rollback path still validated.
-Git Gate: Required.
+- Validate thresholds against realistic traffic.
+- Wire live dashboards or equivalent operator-facing readbacks.
 
----
+## Phase 6 - Canary Rollout
 
-Production Readiness Definition
-Kinflow is production-ready when:
-deterministic + durable behavior proven under replay/recovery,
-transport contract conformance holds,
-observability and incident controls are active,
-and every phase is landed/traceable in git.
+Status: PLANNED
+
+- Canary policy exists.
+- Canary kickoff runner exists.
+
+Remaining exit work:
+
+- Enable limited cohort traffic.
+- Monitor real-path telemetry.
+- Execute incident response dry run during canary.
+
+## Phase 7 - Full Production
+
+Status: PLANNED
+
+- Full rollout enabled.
+- Post-launch coupling audit complete.
+- Deferred evolution items triaged.

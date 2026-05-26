@@ -6,7 +6,7 @@ DAEMON_PY="${KINFLOW_ROOT}/scripts/daemon_run.py"
 OUTPUT_ROOT="${OUTPUT_ROOT:-/home/agent/projects/_backlog/output}"
 SERVICE_NAME="${SERVICE_NAME:-kinflow-daemon.service}"
 KINFLOW_DB_PATH="${KINFLOW_DB_PATH:-${KINFLOW_ROOT}/.anchor_runtime.sqlite}"
-VERIFY_CTX002_GOLDEN_DRY_RUN="${VERIFY_CTX002_GOLDEN_DRY_RUN:-0}"
+VERIFY_KINFLOW_GOLDEN_DRY_RUN="${VERIFY_KINFLOW_GOLDEN_DRY_RUN:-0}"
 CANARY_COMMAND="${CANARY_COMMAND:-}"
 
 JOURNAL_LINES="${JOURNAL_LINES:-500}"
@@ -20,7 +20,7 @@ fi
 
 mkdir -p "${OUTPUT_ROOT}"
 UTCSTAMP="$(date -u +%Y%m%dT%H%M%SZ)"
-RUN_DIR="${OUTPUT_ROOT}/kinflow_verify_ctx002golden${UTCSTAMP}"
+RUN_DIR="${OUTPUT_ROOT}/kinflow_verify_golden${UTCSTAMP}"
 mkdir -p "${RUN_DIR}"
 
 COMPILE_LOG="${RUN_DIR}/compile_check.log"
@@ -142,7 +142,7 @@ run_daemon_restart() {
     return 0
   fi
 
-  if [[ "${VERIFY_CTX002_GOLDEN_DRY_RUN}" == "1" ]]; then
+  if [[ "${VERIFY_KINFLOW_GOLDEN_DRY_RUN}" == "1" ]]; then
     {
       echo "stage=daemon_restart"
       echo "result=SKIPPED_DRY_RUN"
@@ -293,7 +293,7 @@ run_canary_stage() {
     return 0
   fi
 
-  if [[ "${VERIFY_CTX002_GOLDEN_DRY_RUN}" == "1" ]]; then
+  if [[ "${VERIFY_KINFLOW_GOLDEN_DRY_RUN}" == "1" ]]; then
     {
       echo "stage=canary_stage"
       echo "result=SKIPPED_DRY_RUN"
@@ -425,7 +425,7 @@ write_summary_and_verdict() {
 
   printf '%s\n' "${verdict}" >"${FINAL_VERDICT_TXT}"
 
-  python3 - "${STAGE_TSV}" "${SUMMARY_JSON}" "${UTCSTAMP}" "${RUN_DIR}" "${KINFLOW_DB_PATH}" "${SERVICE_NAME}" "${VERIFY_CTX002_GOLDEN_DRY_RUN}" "${verdict}" <<'PY'
+  python3 - "${STAGE_TSV}" "${SUMMARY_JSON}" "${UTCSTAMP}" "${RUN_DIR}" "${KINFLOW_DB_PATH}" "${SERVICE_NAME}" "${VERIFY_KINFLOW_GOLDEN_DRY_RUN}" "${verdict}" <<'PY'
 import json
 import sys
 from pathlib import Path

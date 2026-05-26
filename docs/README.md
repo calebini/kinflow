@@ -1,15 +1,18 @@
-# Kinflow Docs Index
+# Kinflow Docs
 
-Operational and implementation notes for Kinflow.
+Current operational and developer-facing docs live here. Historical landing reports, verification evidence, and phase packets are intentionally not kept as active documentation.
 
-Repo-wide versioning standard:
-- `../AGENTS.md` defines the Cortext1 one-way contract pinning rule.
-- `../specs/KINFLOW_CONTRACT_FREEZE_MANIFEST_PHASE0_5.md` is the gate-critical source for pinned canonical artifact hashes.
-- `../scripts/verify_contract_pins.py` verifies the active manifest against local artifacts and runtime declarations.
+## Current Docs
 
-Key canonical install notes:
-- `KINFLOW_SPEC_INSTALL_DISPATCHER_OC_INTEGRATION_V017_NOTE.md`
-- `KINFLOW_SPEC_INSTALL_DISPATCHER_OC_PF_CLOSURE_ADDENDUM_V017B_NOTE.md`
-- `KINFLOW_SPEC_INSTALL_DAEMON_RUNNER_IMPLEMENTATION_V013_NOTE.md`
-- `KINFLOW_SPEC_INSTALL_DAEMON_DEPLOYMENT_V014_NOTE.md`
-- `KINFLOW_SPEC_INSTALL_NOTIFICATION_RENDERING_V053_NOTE.md`
+- `usage.md` - practical operator usage and examples
+- `operations.md` - startup, degraded-mode, and incident procedures
+- `rollback.md` - rollback procedure and verification expectations
+- `decisions/adapter-results-vs-delivery-attempts.md` - architecture decision for the single persisted delivery ledger
+
+## Authority Boundary
+
+Normative design and compatibility promises belong in `../specs/`.
+
+Machine-checked behavior belongs in `../tests/`.
+
+Release-critical artifact pins belong in `../specs/KINFLOW_CONTRACT_FREEZE_MANIFEST_PHASE0_5.md`.

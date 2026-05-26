@@ -1,257 +1,94 @@
 # Kinflow
 
-## What It Is
+Kinflow is a deterministic, chat-first family scheduling coordinator: clear plans, calm reminders, and no mystery calendar magic.
 
-Kinflow is a deterministic, chat-first family scheduling coordinator.
+It captures event intent from chat-shaped input, resolves create/update/cancel actions, requires explicit confirmation before persistence, and drives reminders with auditable state transitions.
 
-It captures event intent from chat, resolves create/update/cancel actions, enforces explicit confirmation before persistence, and drives reliable daily briefs and reminders with audit-first traceability.
+## What It Does
 
-Kinflow is designed for:
-- predictable behavior under ambiguity
-- policy-bounded delivery
-- clear lifecycle evidence for every state transition
----
+- Maintains versioned scheduling records for family events.
+- Resolves create, update, and cancel intent deterministically.
+- Blocks ambiguous changes instead of guessing.
+- Regenerates reminders when events change.
+- Enforces recipient-aware delivery policy, including quiet-hours and missing-timezone blocks.
+- Records lifecycle, delivery, retry, and policy decisions with canonical reason codes.
 
-## Core Concepts
+## Repository Layout
 
-**Event**
-A versioned scheduling record (title, time semantics, participants, audience, status) that acts as the source of truth.
+```text
+src/kinflow/       Runtime package
+tests/             Executable expectations
+scripts/           Operator, daemon, probe, and verification entrypoints
+migrations/        SQLite schema migrations
+specs/             Normative specs, contracts, and freeze manifest
+requirements/      Requirements baseline
+architecture/      Architecture baseline
+docs/              Current developer and operator docs
+ops/               Operational scripts and playbooks
+observability/     Alert, query, and canary policy assets
+```
 
-**ReminderRule**
-Policy for pre-event reminders (offset, recipient scope, enabled state).
+## Key Runtime Files
 
-**Trigger / Job**
-A scheduled execution unit:
-- `daily_overview`
-- `event_reminder`
-**DeliveryAttempt**
-A concrete outbound attempt with status and failure/suppression reason.
-
-**Resolver**
-Deterministic create-vs-update decision path:
-1. explicit event reference
-2. deterministic similarity match
-3. ambiguity block (requires user disambiguation)
-4. no match → create
-
-**Policy Reason Codes**
-Canonical enum IDs (no free-text drift) used for resolver/time/lifecycle/delivery decisions.
-
----
-## Architecture
-
-Chat Ingress
-│
-Intake Orchestrator
-├─ Intent Parser (fields + confidence)
-├─ Resolver (create/update/cancel precedence)
-├─ Confirmation Gate (hard yes/no before persist)
-│
-Event Store (versioned event state)
-│
-Scheduler / Trigger Engine
-├─ Reminder generation/invalidation/regeneration
-├─ Daily overview scheduling
-│
-Delivery Engine
-├─ Group/individual routing
-├─ Quiet-hours enforcement (recipient-local time)
-├─ Bounded retries + dedupe gate
-│
-Audit Ledger (append-only lifecycle records)
-
-Core references:
-- Requirements baseline: `requirements/KINFLOW_MASTER_REQUIREMENTS_UNIFIED_V0.md`
-- Architecture baseline: `architecture/KINFLOW_V0_ARCHITECTURE_BRIEF_MASTER.md`
-
-
-## Canonical Persistence Spec
-
-- `specs/KINFLOW_DURABLE_PERSISTENCE_SPEC_MASTER_v0.2.6.md` (content version: v0.2.8)
-
----
-
-## Canonical Comms Adapter Spec
-
-- `specs/KINFLOW_COMMS_ADAPTER_CONTRACT_MASTER_v0.1.7.md` (content version: v0.1.8)
-
-## Canonical Dispatcher↔OC Adapter Integration Addendum
-
-- `specs/KINFLOW_DISPATCHER_OC_ADAPTER_INTEGRATION_ADDENDUM_v0.1.7.md`
-- `specs/KINFLOW_DISPATCHER_OC_ADAPTER_INTEGRATION_ADDENDUM_v0.1.7b.md`
-
-## Canonical Production Plan Checklist
-
-- `specs/KINFLOW_PRODUCTION_PLAN_CHECKLIST_MASTER.md`
-
-## Canonical Daemon Runtime Contract
-
-- `specs/KINFLOW_DAEMON_RUNTIME_CONTRACT_MASTER_v0.1.4.md`
-
-## Canonical Daemon Deployment Contract
-
-- `specs/KINFLOW_DAEMON_DEPLOYMENT_CONTRACT_MASTER_v0.1.4.md`
-
-## Canonical Daemon Runner Implementation Spec
-
-- `specs/KINFLOW_DAEMON_RUNNER_IMPLEMENTATION_SPEC_MASTER_v0.1.3.md`
-
-## Canonical OpenClaw Adapter Implementation Spec
-
-- `specs/KINFLOW_OC_ADAPTER_IMPLEMENTATION_SPEC_MASTER_v0.2.4.md` (content version: v0.2.5)
-
-## Canonical Reason Code Registry
-
-- `specs/KINFLOW_REASON_CODES_CANONICAL.md`
-
-## Canonical Notification Rendering Minimum Spec
-
-- `specs/KINFLOW_NOTIFICATION_RENDERING_MIN_SPEC_v0.5.3.md`
-
-## Key Behaviors
-### Idempotency
-Same intent fingerprint + same state resolves to same terminal mutation.
-
-### Resolver correctness
-Ambiguity never auto-resolves; explicit references always win.
-
-### Reminder regeneration
-Event update invalidates future old-version reminders and regenerates deterministic new set.
-
-### Cancel propagation
-Event cancel invalidates all future pending reminders.
-
-### Timezone safety
-- Event timezone = event semantics
-- Recipient timezone = delivery timing + quiet-hours
-- Missing recipient timezone blocks delivery scheduling (`TZ_MISSING`)
-
-### Delivery reliability
-- bounded retries
-- dedupe before send
-- no duplicate user-visible delivery for same dedupe key
-
-### Auditability
-Every lifecycle step emits append-only, correlated audit events with reason codes.
-
----
-
-## Data Flow (Happy Path)
-
-1. Intake user message
-2. Parse/classify intent + required fields
-3. Ask follow-up only for missing required fields
-4. Resolve create/update/cancel target deterministically
-5. Normalize event candidate
-6. Confirmation gate (`Save this event? yes/no`)
-7. Persist event mutation (versioned)
-8. Generate/invalidate triggers
-9. Execute due delivery attempts
-10. Record delivery + audit outcomes
-
----
-
-## Key Files
-
-- `src/ctx002_v0/engine.py` — deterministic lifecycle engine
-- `src/ctx002_v0/contract_versions.py` — runtime declarations for implemented Cortext1 spec/contract versions
-- `src/ctx002_v0/daemon.py` — P2-A daemon baseline primitives (contract v0.1.4 aligned)
-- `src/ctx002_v0/tickerd_runtime.py` — Kinflow adapter layer for the external `tickerd` daemon component
-- `src/ctx002_v0/models.py` — Event/Reminder/Delivery contracts
-- `src/ctx002_v0/reason_codes.py` — canonical reason-code enums
-- `src/ctx002_v0/persistence/db.py` — P1-A migration/bootstrap/FK/checksum/dirty enforcement primitives
-- `src/ctx002_v0/persistence/reason_binding.py` — canonical reason-code source binding validation scaffold
-- `src/ctx002_v0/persistence/store.py` — repository abstraction + in-memory/sqlite state stores
-- `migrations/0001_p1a_schema_foundation.sql` — canonical SQLite schema + enum seeds (v0.2.7-aligned)
-- `tests/test_acceptance_v0.py` — deterministic acceptance harness
-- `tests/test_p1a_schema_migrations.py` — P1-A schema/migration guard test suite
-- `tests/test_p1b_repo_integration.py` — P1-B repository integration suite
-- `tests/test_p1c_recovery_capture_idempotency.py` — P1-C recovery/capture/idempotency invariant suite
-- `tests/test_p2a_daemon_baseline.py` — P2-A daemon baseline contract conformance suite
-- `tests/test_tickerd_adapter.py` — Kinflow adapter conformance and mode/identity checks against `tickerd`
-- `docs/KINFLOW_V0_IMPLEMENTATION_NOTES.md` — implementation mapping
-- `docs/KINFLOW_V0_VERIFICATION_EVIDENCE.md` — lint/test evidence
-- `docs/KINFLOW_V0_KNUTH_LANDING_HANDOFF.md` — landing handoff
-- `docs/PROJECT_RENAME_CTX002_TO_KINFLOW.md` — rename/migration note
-- `docs/KINFLOW_P1A_SCHEMA_MIGRATIONS_NOTES.md` — P1-A scope and artifact notes
-- `docs/KINFLOW_P1A_VERIFICATION_EVIDENCE.md` — P1-A verification evidence
-- `docs/KINFLOW_P1B_REPO_INTEGRATION_NOTES.md` — P1-B repository integration notes
-- `docs/KINFLOW_P1B_VERIFICATION_EVIDENCE.md` — P1-B verification evidence
-- `docs/KINFLOW_P1C_RECOVERY_CAPTURE_IDEMPOTENCY_NOTES.md` — P1-C recovery/capture/idempotency notes
-- `docs/KINFLOW_P1C_VERIFICATION_EVIDENCE.md` — P1-C verification evidence
-- `docs/KINFLOW_P2A_DAEMON_BASELINE_NOTES.md` — P2-A daemon baseline implementation notes
-
-## Daemon Runtime Migration
-
-Kinflow now consumes `tickerd` from the sibling Cortext component repo (`../tickerd`) as the reusable daemon kernel. Kinflow keeps reminder models, persistence, migrations, environment names, reason codes, provider/OpenClaw bindings, WhatsApp/channel behavior, message rendering, idempotency policy, health paths, and deployment policy in this repo.
-
-The new foreground entrypoint is `scripts/tickerd_daemon_run.py`. The legacy `scripts/daemon_run.py` path remains as a temporary compatibility/reference runner while the adapter path is exercised.
-- `docs/KINFLOW_P2A_VERIFICATION_EVIDENCE.md` — P2-A contract verification evidence and matrix
-- `docs/KINFLOW_PHASE1_EXIT_EVIDENCE_MASTER.md` — Phase 1 exit criteria assessment and evidence matrix
-- `docs/KINFLOW_PHASE2_EXIT_EVIDENCE_MASTER.md` — Phase 2 consolidated exit evidence and gate lineage (P2-B + P2-C)
-- `docs/KINFLOW_P2B_OC_ADAPTER_CONFORMANCE_EVIDENCE.md` — Phase 2-B OpenClaw adapter conformance evidence
-- `docs/KINFLOW_P2C_E2E_RUNTIME_VERIFICATION_REPORT.md` — Phase 2-C end-to-end runtime verification report
-- `docs/KINFLOW_PHASE4_HARDENING_KICKOFF_REPORT.md` — Phase 4 hardening kickoff gate report (drills + readiness verdict)
-- `docs/KINFLOW_PHASE5_HARDENING_CI_MIGRATION_REPORT.md` — Phase 5 CI/migration hardening gate report (initial NO_GO assessment)
-- `docs/KINFLOW_PHASE5_CI_ENFORCEMENT_REMEDIATION_REPORT.md` — Phase 5 CI enforcement remediation report (blocker closure evidence)
-- `docs/KINFLOW_PHASE5_5_OBSERVABILITY_KICKOFF_REPORT.md` — Phase 5.5 observability minimum kickoff report and gate verdict
-- `observability/phase5_5/sqlite_signal_queries.sql` — canonical SQL query pack for replay/retry/blocked signals
-- `observability/phase5_5/alert_policy.yaml` — threshold/severity/runbook mapping for observability minimum
-- `scripts/phase5_5_observability_probe.py` — deterministic trigger/clear probe for all required signals
-- `docs/KINFLOW_PHASE6_CANARY_KICKOFF_REPORT.md` — Phase 6 bounded canary kickoff report with rollback-trigger verdicts
-- `docs/KINFLOW_USER_RUNBOOK_MASTER.md` — canonical user/operator runbook (practical usage quick-start and guardrails)
-- `observability/phase6/canary_policy.yaml` — canary envelope + rollback threshold policy
-- `scripts/phase6_canary_kickoff.py` — deterministic canary runner (readiness, snapshots, trigger evaluation, final verdict)
-- `docs/KINFLOW_OPERATOR_RUNBOOK_PHASE4.md` — operator startup/restart/incident runbook (Phase 4)
-- `docs/KINFLOW_ROLLBACK_RUNBOOK_PHASE4.md` — rollback runbook and restoration proof flow (Phase 4)
-- `scripts/phase4_hardening_drills.py` — deterministic Phase 4 drill runner (restart/failure/rollback)
-- `docs/KINFLOW_OC_GATEWAY_ASSUMPTION_PROBE.md` — deterministic gateway assumption probe evidence (Discord/WhatsApp/error-shape)
-- `docs/KINFLOW_SPEC_FAMILY_ALIGNMENT_REPORT_2026-03-24.md` — cross-spec alignment packet report for issues #1–#16
-- `docs/KINFLOW_R2_MAPPING_HEALTH_RETRY_CLOSURE_REPORT.md` — Issue B/C/D closure packet (mapping completeness, health extension semantics, retry-window residency)
-- `docs/KINFLOW_ARCH_DECISION_ISSUE3_ADAPTER_RESULTS_VS_DELIVERY_ATTEMPTS_2026-03-24.md` — authoritative Issue #3 architecture decision (single-store persistence model)
-- `docs/KINFLOW_SPEC_BASELINE_DECLARATION_POST_ISSUE3_2026-03-24.md` — post-Issue #3 re-baseline declaration for P2-B continuation gate
-- `specs/KINFLOW_CONTRACT_FREEZE_MANIFEST_PHASE0_5.md` — Phase 0.5 canonical freeze manifest (pinned versions + hashes + change-control)
-- `scripts/verify_contract_pins.py` — one-way freeze manifest hash/version verification gate
-- `docs/KINFLOW_R5_RECIPROCAL_PIN_MODEL_CORRECTION_REPORT.md` — reciprocal freeze↔checklist hash-cycle correction to one-way authoritative pin model
-
----
+- `src/kinflow/engine.py` - deterministic lifecycle engine
+- `src/kinflow/models.py` - event, reminder, delivery, and target models
+- `src/kinflow/reason_codes.py` - canonical reason-code enum
+- `src/kinflow/contract_versions.py` - implemented spec and contract declarations
+- `src/kinflow/persistence/` - migration, reason binding, and state store primitives
+- `src/kinflow/daemon.py` - daemon runtime primitives
+- `src/kinflow/tickerd_runtime.py` - adapter layer for the external `tickerd` daemon component
+- `src/kinflow/oc_adapter.py` - OpenClaw delivery adapter integration
 
 ## Verification
 
-Run from project root:
+Run the required repository gates from the repo root:
+
 ```bash
 python3 scripts/verify_contract_pins.py
-python3 -m compileall -q src scripts tests && echo LINT_PASS_NORMALIZED
 PYTHONPATH=src python3 -m unittest discover -s tests -p 'test_*.py' -v
-PYTHONPATH=src python3 -m unittest -v tests.test_p1a_schema_migrations
 ```
-Expected:
-- `CONTRACT_PIN_VERIFY_PASS`
-- `LINT_PASS_NORMALIZED`
-- `Ran 9 tests ...`
-- `OK`
 
-## Operator Scripts (copy/paste)
+The pin verifier checks the freeze manifest against canonical artifacts and runtime version declarations.
 
-Run from project root:
+## Operator Entrypoints
+
 ```bash
-PYTHONPATH=src python3 scripts/operator_smoke.py
 PYTHONPATH=src python3 scripts/operator_create.py
 PYTHONPATH=src python3 scripts/operator_update.py
 PYTHONPATH=src python3 scripts/operator_cancel.py
+PYTHONPATH=src python3 scripts/operator_smoke.py
 ```
 
-Script purposes:
-- `scripts/operator_smoke.py` — one-pass create + delivery + brief/hash sanity check.
-- `scripts/operator_create.py` — deterministic create flow and due reminder delivery output.
-- `scripts/operator_update.py` — create then explicit update flow with regeneration-aware delivery output.
-- `scripts/operator_cancel.py` — create then cancel flow showing cancellation state and post-cancel delivery output.
+The current foreground daemon entrypoint is:
 
----
+```bash
+PYTHONPATH=src python3 scripts/tickerd_daemon_run.py
+```
 
-## Current Status / Known Gaps
+`scripts/daemon_run.py` remains as a compatibility/reference runner while the `tickerd` adapter path is exercised.
 
-- v0 deterministic core implemented and verified.
-- Calendar integrations are intentionally out-of-scope for v0.
-- Persistence/deployment hardening may still require follow-on phases.
-- GitHub square-one hygiene/CI standardization should be completed and enforced as policy gates.
+## Source Of Truth
+
+Kinflow follows the Cortext1 one-way contract pinning model:
+
+```text
+Versions communicate compatibility.
+Hashes prove exact reviewed artifacts.
+Tests prove behavior.
+The freeze manifest is one-way authoritative.
+```
+
+Canonical release-critical pins live in `specs/KINFLOW_CONTRACT_FREEZE_MANIFEST_PHASE0_5.md`.
+
+Runtime code declares implemented versions in `src/kinflow/contract_versions.py`.
+
+Public behavior changes require:
+
+- updating the relevant spec or contract version;
+- updating runtime implemented-version declarations;
+- updating contract tests or golden fixtures;
+- rebinding the freeze manifest if a pinned artifact changed.
+
+## Docs
+
+Current working docs are indexed in `docs/README.md`.

@@ -1,11 +1,11 @@
-CTX-002 Incident Playbook 
+Kinflow Incident Playbook
 0) Scope
-Applies to Kinflow WhatsApp daemon delivery path (whatsapp-daemon) after CTX-002 soak baseline.
+Applies to the Kinflow WhatsApp daemon delivery path after the soak baseline.
 
 1) Known-Good Baseline
-Stable tag: ctx002-soak-stable-2026-04-18
+Stable tag: kinflow-soak-stable-2026-04-18
 Canonical verifier:
-/home/agent/projects/apps/kinflow/ops/verify_ctx002_golden.sh
+/home/agent/projects/apps/kinflow/ops/verify_kinflow_golden.sh
 Stable expectation:
 outbound body format: Reminder: {title} at {YYYY-MM-DD HH:MM} {TZ}
 delivery row success:
@@ -16,7 +16,7 @@ provider ref present
 
 2) First 3 Commands (always)
 cd /home/agent/projects/apps/kinflow
-bash /home/agent/projects/apps/kinflow/ops/verify_ctx002_golden.sh
+bash /home/agent/projects/apps/kinflow/ops/verify_kinflow_golden.sh
 sudo journalctl -u kinflow-daemon.service -n 400 -o cat | rg -i 'error|exception|traceback|boundary_|seam|failed'
 python3 - <<'PY'
 import sqlite3

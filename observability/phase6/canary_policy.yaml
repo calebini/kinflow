@@ -31,6 +31,6 @@ rollback_triggers:
     threshold: "any P0/P1 incident declaration"
     severity: "critical"
 runbook_links:
-  canary_operation: "docs/KINFLOW_OPERATOR_RUNBOOK_PHASE4.md#incident-response-flow"
-  rollback: "docs/KINFLOW_ROLLBACK_RUNBOOK_PHASE4.md"
-  ci_drift: "docs/KINFLOW_PHASE5_CI_ENFORCEMENT_REMEDIATION_REPORT.md"
+  canary_operation: "docs/operations.md#incident-response"
+  rollback: "docs/rollback.md"
+  ci_drift: "docs/operations.md#incident-response"

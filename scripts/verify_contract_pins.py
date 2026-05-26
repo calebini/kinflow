@@ -90,7 +90,7 @@ def _verify_freeze_pins(pins: list[FreezePin]) -> list[str]:
 
 def _verify_runtime_declarations(pins: list[FreezePin]) -> list[str]:
     sys.path.insert(0, str(ROOT / "src"))
-    from ctx002_v0.contract_versions import IMPLEMENTED_CONTRACTS
+    from kinflow.contract_versions import IMPLEMENTED_CONTRACTS
 
     pins_by_relpath = {str(pin.resolved_path.relative_to(ROOT)): pin for pin in pins if pin.resolved_path.is_relative_to(ROOT)}
     failures: list[str] = []

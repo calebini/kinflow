@@ -4,8 +4,8 @@ import tempfile
 import unittest
 from datetime import UTC, datetime, timedelta
 
-from ctx002_v0.models import DeliveryTarget, Event, Reminder
-from ctx002_v0.oc_adapter import (
+from kinflow.models import DeliveryTarget, Event, Reminder
+from kinflow.oc_adapter import (
     AdapterCapabilities,
     MappingRule,
     OpenClawGatewayAdapter,
@@ -13,8 +13,8 @@ from ctx002_v0.oc_adapter import (
     OutboundMessage,
     delivery_result_to_attempt_kwargs,
 )
-from ctx002_v0.persistence.store import SqliteStateStore
-from ctx002_v0.reason_codes import ReasonCode
+from kinflow.persistence.store import SqliteStateStore
+from kinflow.reason_codes import ReasonCode
 
 
 class _Clock:

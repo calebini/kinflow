@@ -20,7 +20,7 @@ class DestinationValidationError(ValueError):
 
 
 class FamilySchedulerV0:
-    """Deterministic v0 core for CTX-002."""
+    """Deterministic v0 core for KINFLOW."""
 
     def __init__(
         self,

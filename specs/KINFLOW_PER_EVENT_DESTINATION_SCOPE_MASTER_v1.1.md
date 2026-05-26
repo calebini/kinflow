@@ -3,15 +3,15 @@ title: KINFLOW Per-Event Destination Scope Master
 version: v1.1
 status: approved-for-spec-derivation
 date_utc: 2026-04-22
-initiative: CTX-002
+initiative: KINFLOW
 ---
 
-CTX-002 Scope Doc — Per-Event Target Channel/Group (Master Cut v1.1)
+KINFLOW Scope Doc — Per-Event Target Channel/Group (Master Cut v1.1)
 1) Objective
 Enable each event to define its own reminder delivery destination (channel/group/DM target), instead of relying only on recipient default target resolution.
 
 2) Problem Statement
-Current CTX-002 reminder routing is recipient-target based.
+Current KINFLOW reminder routing is recipient-target based.
 This prevents first-class support for:
 Event A reminders to Group X
 Event B reminders to Group Y
@@ -127,7 +127,7 @@ Event without override uses fallback precedence exactly:
 request-context-default, else recipient-default.
 Invalid override yields deterministic canonical failure (no false delivered).
 Audit/attempt records explicitly show destination source and resolved target.
-Existing CTX-002 golden checks still pass (or are updated with explicit rationale limited to destination-source additions).
+Existing KINFLOW golden checks still pass (or are updated with explicit rationale limited to destination-source additions).
 Version tuple and bump policy checks are satisfied in CI for this slice.
 
 16) Done Definition

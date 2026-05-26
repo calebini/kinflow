@@ -11,7 +11,7 @@ SRC = ROOT / "src"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
-from ctx002_v0.tickerd_runtime import (  # noqa: E402
+from kinflow.tickerd_runtime import (  # noqa: E402
     KinflowEventSink,
     KinflowHealthSink,
     KinflowModeReader,
@@ -42,7 +42,7 @@ from scripts.daemon_run import (  # noqa: E402
     write_state_stamp,
     _emit,
 )
-from ctx002_v0.persistence.store import SqliteStateStore  # noqa: E402
+from kinflow.persistence.store import SqliteStateStore  # noqa: E402
 
 
 def build_tickerd_config(cfg: object, env: dict[str, str] | None = None) -> TickerdConfig:

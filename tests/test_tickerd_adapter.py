@@ -7,7 +7,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from unittest.mock import patch
 
-from ctx002_v0.tickerd_runtime import (
+from kinflow.tickerd_runtime import (
     KinflowModeReader,
     KinflowReconciler,
     KinflowWorkItemProcessor,
@@ -24,9 +24,9 @@ from tickerd.kernel import RuntimeKernel  # noqa: E402
 from tickerd.types import RuntimeMode  # noqa: E402
 
 from scripts.daemon_run import DispatchCallbacks, build_oc_adapter_binding  # noqa: E402
-from src.ctx002_v0.models import DeliveryTarget, Event, Reminder  # noqa: E402
-from src.ctx002_v0.oc_adapter import OpenClawSendResponseNormalized  # noqa: E402
-from src.ctx002_v0.persistence.store import SqliteStateStore  # noqa: E402
+from kinflow.models import DeliveryTarget, Event, Reminder  # noqa: E402
+from kinflow.oc_adapter import OpenClawSendResponseNormalized  # noqa: E402
+from kinflow.persistence.store import SqliteStateStore  # noqa: E402
 from tests.test_daemon_runner_v013 import _test_runner_cfg  # noqa: E402
 
 TICK_TS = datetime(2026, 1, 1, 0, 0, 1, tzinfo=UTC)

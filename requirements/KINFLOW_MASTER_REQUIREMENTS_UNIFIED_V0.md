@@ -1,9 +1,9 @@
 source_message_id: 1483765985654739005
 source_channel_id: 1483760080766898297
-installed_by_instruction_id: CTX-002-INSTALL-REQS-20260318-001
+installed_by_instruction_id: KINFLOW-INSTALL-REQS-20260318-001
 installed_utc: 2026-03-18T14:17:54Z
 
-CTX-002 Requirements (Unified v0 Baseline — Slugged)
+KINFLOW Requirements (Unified v0 Baseline — Slugged)
 
 0) Purpose
 
@@ -13,7 +13,7 @@ Chat-first family scheduling coordinator with deterministic behavior, auditabili
 
 1) Core Product Outcomes
 
-CTX-002-REQ-1.1 Required Outcomes
+KINFLOW-REQ-1.1 Required Outcomes
 	•	Reliable event create / update / cancel via chat
 	•	Deterministic normalization and persistence
 	•	Reliable daily morning overview
@@ -21,31 +21,31 @@ CTX-002-REQ-1.1 Required Outcomes
 	•	Correct update/cancel propagation
 	•	End-to-end traceability
 
-CTX-002-REQ-1.2 Post-v0 Direction
+KINFLOW-REQ-1.2 Post-v0 Direction
 	•	Calendar ingest and publish (design guardrail only)
 
 ⸻
 
 2) Functional Requirements
 
-CTX-002-FR-2.1 Chat Event Intake
+KINFLOW-FR-2.1 Chat Event Intake
 	•	Create / update / cancel supported
 	•	Natural language input
 	•	Deterministic parsing + classification
 	•	Conditional follow-up (missing required fields only)
 
-CTX-002-FR-2.1.1 Required Fields
+KINFLOW-FR-2.1.1 Required Fields
 	•	Date/time or all-day
 	•	Audience/participants
 	•	Reminder preference
 
-CTX-002-FR-2.1.2 Guardrails
+KINFLOW-FR-2.1.2 Guardrails
 	•	No over-collection
 	•	No silent assumptions
 
 ⸻
 
-CTX-002-FR-2.2 Confirmation Gate (HARD)
+KINFLOW-FR-2.2 Confirmation Gate (HARD)
 	•	Show normalized summary
 	•	Explicit yes/no save
 
@@ -55,7 +55,7 @@ Rules
 
 ⸻
 
-CTX-002-FR-2.3 Event Lifecycle
+KINFLOW-FR-2.3 Event Lifecycle
 	•	Create / update / cancel (complete optional)
 
 Behavior
@@ -65,18 +65,18 @@ Behavior
 
 ⸻
 
-CTX-002-FR-2.4 Create vs Update Resolver (HARD)
+KINFLOW-FR-2.4 Create vs Update Resolver (HARD)
 
-CTX-002-FR-2.4.1 Explicit Reference
+KINFLOW-FR-2.4.1 Explicit Reference
 	•	event_id or unambiguous reference → UPDATE
 
-CTX-002-FR-2.4.2 High-Confidence Match
+KINFLOW-FR-2.4.2 High-Confidence Match
 	•	title + time + participants above threshold → UPDATE
 
-CTX-002-FR-2.4.3 Ambiguous Match
+KINFLOW-FR-2.4.3 Ambiguous Match
 	•	Multiple/low confidence → REQUIRE CONFIRMATION
 
-CTX-002-FR-2.4.4 No Match
+KINFLOW-FR-2.4.4 No Match
 	•	→ CREATE
 
 Guardrails
@@ -85,7 +85,7 @@ Guardrails
 
 ⸻
 
-CTX-002-FR-2.5 Timezone Authority (HARD)
+KINFLOW-FR-2.5 Timezone Authority (HARD)
 	•	Each event has canonical timezone
 
 Resolution Order
@@ -100,7 +100,7 @@ Rules
 
 ⸻
 
-CTX-002-FR-2.6 Daily Morning Brief
+KINFLOW-FR-2.6 Daily Morning Brief
 	•	Cron at configured local time
 
 Structure
@@ -115,7 +115,7 @@ Routing
 
 ⸻
 
-CTX-002-FR-2.7 Reminder Engine
+KINFLOW-FR-2.7 Reminder Engine
 
 Core
 	•	Single offset required (v0)
@@ -124,19 +124,19 @@ Core
 Lifecycle
 	•	scheduled → attempted → delivered | failed
 
-CTX-002-FR-2.7.1 Requirements
+KINFLOW-FR-2.7.1 Requirements
 	•	Deterministic scheduling
 	•	Dedupe (event + offset + time)
 	•	Bounded retries
 	•	Quiet-hours enforcement (configurable)
 
-CTX-002-FR-2.7.2 Mutation
+KINFLOW-FR-2.7.2 Mutation
 	•	Update → regenerate reminders
 	•	Cancel → invalidate reminders
 
 ⸻
 
-CTX-002-FR-2.8 Delivery & Routing
+KINFLOW-FR-2.8 Delivery & Routing
 	•	Targets: group / individual
 
 Lifecycle States
@@ -152,7 +152,7 @@ Requirements
 
 ⸻
 
-CTX-002-FR-2.9 Audit & Traceability (HARD)
+KINFLOW-FR-2.9 Audit & Traceability (HARD)
 
 Trace must include:
 	•	Source message
@@ -169,21 +169,21 @@ Properties
 
 ⸻
 
-CTX-002-FR-2.10 Audit Retention & Redaction
+KINFLOW-FR-2.10 Audit Retention & Redaction
 
-CTX-002-FR-2.10.1 Retention
+KINFLOW-FR-2.10.1 Retention
 	•	Minimum retention window required (30–90 days baseline)
 
-CTX-002-FR-2.10.2 Redaction
+KINFLOW-FR-2.10.2 Redaction
 	•	Sensitive fields may be masked post-threshold
 	•	Must preserve structure and metadata
 
-CTX-002-FR-2.10.3 Immutability
+KINFLOW-FR-2.10.3 Immutability
 	•	Redaction is additive, not destructive
 
 ⸻
 
-CTX-002-FR-2.11 Idempotency & Dedupe (HARD)
+KINFLOW-FR-2.11 Idempotency & Dedupe (HARD)
 	•	Same intent ≠ duplicate event
 	•	Deterministic create vs update
 	•	Reminder dedupe enforced
@@ -191,13 +191,13 @@ CTX-002-FR-2.11 Idempotency & Dedupe (HARD)
 
 ⸻
 
-CTX-002-FR-2.12 Event-Type Foundation
+KINFLOW-FR-2.12 Event-Type Foundation
 	•	event_type supported (optional)
 	•	Table-driven behavior (future)
 
 ⸻
 
-CTX-002-FR-2.13 Advanced Constructs (Foundational)
+KINFLOW-FR-2.13 Advanced Constructs (Foundational)
 
 EventProfile
 	•	Generic reminder profile required
@@ -210,7 +210,7 @@ EventBundle
 
 3) Data Contract
 
-CTX-002-DC-3.1 Event
+KINFLOW-DC-3.1 Event
 	•	event_id
 	•	title
 	•	start_at / end_at OR all_day
@@ -228,7 +228,7 @@ Optional:
 
 ⸻
 
-CTX-002-DC-3.2 ReminderRule
+KINFLOW-DC-3.2 ReminderRule
 	•	event_id
 	•	offset_minutes
 	•	recipient_scope
@@ -236,7 +236,7 @@ CTX-002-DC-3.2 ReminderRule
 
 ⸻
 
-CTX-002-DC-3.3 DeliveryTarget
+KINFLOW-DC-3.3 DeliveryTarget
 	•	person_id
 	•	channel
 	•	target_id
@@ -244,14 +244,14 @@ CTX-002-DC-3.3 DeliveryTarget
 
 ⸻
 
-CTX-002-DC-3.4 DailyOverviewPolicy
+KINFLOW-DC-3.4 DailyOverviewPolicy
 	•	send_time_local
 	•	recipient_scope
 	•	include_completed
 
 ⸻
 
-CTX-002-DC-3.5 Future Fields
+KINFLOW-DC-3.5 Future Fields
 	•	external_refs
 	•	origin
 
@@ -259,7 +259,7 @@ CTX-002-DC-3.5 Future Fields
 
 4) Flow Contract
 
-CTX-002-FL-4.1 Deterministic Flow (HARD)
+KINFLOW-FL-4.1 Deterministic Flow (HARD)
 	1.	Intake
 	2.	Parse/classify
 	3.	Follow-up
@@ -277,32 +277,32 @@ Rules
 
 5) Non-Functional Requirements
 
-CTX-002-NFR-5.1 No Silent Edits (HARD)
+KINFLOW-NFR-5.1 No Silent Edits (HARD)
 	•	No changes after confirmation without user action
 
-CTX-002-NFR-5.2 Idempotency (HARD)
+KINFLOW-NFR-5.2 Idempotency (HARD)
 	•	Deterministic behavior across retries and inputs
 
-CTX-002-NFR-5.3 Deterministic Regeneration (HARD)
+KINFLOW-NFR-5.3 Deterministic Regeneration (HARD)
 	•	Edits produce consistent recomputation
 
-CTX-002-NFR-5.4 Quiet Hours
+KINFLOW-NFR-5.4 Quiet Hours
 	•	Enforced unless explicitly overridden
 
-CTX-002-NFR-5.5 Bounded Retries
+KINFLOW-NFR-5.5 Bounded Retries
 	•	No infinite retry loops
 
-CTX-002-NFR-5.6 Audit Integrity (HARD)
+KINFLOW-NFR-5.6 Audit Integrity (HARD)
 	•	Immutable audit with redaction layer
 
-CTX-002-NFR-5.7 Lifecycle Stability (HARD)
+KINFLOW-NFR-5.7 Lifecycle Stability (HARD)
 	•	Explicit, stable state transitions
 
 ⸻
 
 6) Scope
 
-CTX-002-SC-6.1 In Scope
+KINFLOW-SC-6.1 In Scope
 	•	Chat intake + follow-ups
 	•	Resolver logic
 	•	Confirmation gate
@@ -313,7 +313,7 @@ CTX-002-SC-6.1 In Scope
 	•	Delivery tracking
 	•	Audit + retention
 
-CTX-002-SC-6.2 Out of Scope
+KINFLOW-SC-6.2 Out of Scope
 	•	Calendar integrations
 	•	External APIs
 	•	Flight intelligence
@@ -324,10 +324,10 @@ CTX-002-SC-6.2 Out of Scope
 
 7) Governance
 
-CTX-002-GOV-7.1 Migration Path
+KINFLOW-GOV-7.1 Migration Path
 	•	Must support transition to Foreman-controlled execution
 
-CTX-002-GOV-7.2 Migration Gates
+KINFLOW-GOV-7.2 Migration Gates
 	•	Audit completeness
 	•	Determinism validation
 	•	No reliability regression
@@ -336,7 +336,7 @@ CTX-002-GOV-7.2 Migration Gates
 
 8) Acceptance Criteria
 
-CTX-002-AC-8.1 Core Acceptance
+KINFLOW-AC-8.1 Core Acceptance
 	•	Events reliably created/updated/cancelled
 	•	Resolver behaves deterministically
 	•	Confirmation enforced

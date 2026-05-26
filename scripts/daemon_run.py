@@ -20,9 +20,9 @@ SRC = ROOT / "src"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
-from ctx002_v0.contract_versions import IMPLEMENTED_CONTRACT_BY_NAME
-from ctx002_v0.daemon import DaemonRuntime, validate_daemon_config
-from ctx002_v0.models import (
+from kinflow.contract_versions import IMPLEMENTED_CONTRACT_BY_NAME
+from kinflow.daemon import DaemonRuntime, validate_daemon_config
+from kinflow.models import (
     ALLOWED_DESTINATION_CHANNELS,
     DESTINATION_RESOLUTION_STATUS_INVALID,
     DESTINATION_RESOLUTION_STATUS_MISSING,
@@ -35,11 +35,11 @@ from ctx002_v0.models import (
     AuditRecord,
     Reminder,
 )
-from ctx002_v0.oc_adapter import OpenClawGatewayAdapter, OpenClawSendResponseNormalized, OutboundMessage
-from ctx002_v0.persistence.reason_binding import ReasonCodeBinding
-from ctx002_v0.persistence.store import SqliteStateStore
-from ctx002_v0.reason_codes import ReasonCode
-from ctx002_v0.tickerd_runtime import cycle_metadata_from_row
+from kinflow.oc_adapter import OpenClawGatewayAdapter, OpenClawSendResponseNormalized, OutboundMessage
+from kinflow.persistence.reason_binding import ReasonCodeBinding
+from kinflow.persistence.store import SqliteStateStore
+from kinflow.reason_codes import ReasonCode
+from kinflow.tickerd_runtime import cycle_metadata_from_row
 
 RUNTIME_CONTRACT_VERSION = IMPLEMENTED_CONTRACT_BY_NAME["daemon_runtime"].version
 DEPLOYMENT_CONTRACT_VERSION = IMPLEMENTED_CONTRACT_BY_NAME["daemon_deployment"].version

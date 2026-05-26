@@ -8,7 +8,7 @@ import tempfile
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
-from ctx002_v0.persistence.db import (
+from kinflow.persistence.db import (
     apply_migrations,
     connect_sqlite,
     discover_migrations,
@@ -328,22 +328,22 @@ def run(output_dir: Path) -> dict:
         {
             "signal_id": "duplicate_replay_send_anomaly",
             "severity": "high",
-            "runbook": "docs/KINFLOW_OPERATOR_RUNBOOK_PHASE4.md#incident-response-flow",
+            "runbook": "docs/operations.md#incident-response",
         },
         {
             "signal_id": "retry_exhaustion",
             "severity": "high",
-            "runbook": "docs/KINFLOW_OPERATOR_RUNBOOK_PHASE4.md#incident-response-flow",
+            "runbook": "docs/operations.md#incident-response",
         },
         {
             "signal_id": "blocked_outcomes",
             "severity": "medium",
-            "runbook": "docs/KINFLOW_OPERATOR_RUNBOOK_PHASE4.md#incident-response-flow",
+            "runbook": "docs/operations.md#incident-response",
         },
         {
             "signal_id": "ci_protection_drift",
             "severity": "critical",
-            "runbook": "docs/KINFLOW_PHASE5_CI_ENFORCEMENT_REMEDIATION_REPORT.md",
+            "runbook": "docs/operations.md#incident-response",
         },
     ]
 

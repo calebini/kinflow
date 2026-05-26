@@ -10,8 +10,8 @@ from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo
 
-from ctx002_v0 import FamilySchedulerV0
-from ctx002_v0.notification_renderer import FALLBACK_REASON_CODE, RENDERER_VERSION, render_reminder_text
+from kinflow import FamilySchedulerV0
+from kinflow.notification_renderer import FALLBACK_REASON_CODE, RENDERER_VERSION, render_reminder_text
 
 
 def _now_utc() -> datetime:
