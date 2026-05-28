@@ -11,6 +11,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from scripts import tickerd_daemon_run
+
 from kinflow.models import DeliveryTarget, Event, Reminder
 from kinflow.persistence.store import SqliteStateStore
 

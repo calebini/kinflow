@@ -115,6 +115,7 @@ class DaemonRunnerV013Tests(unittest.TestCase):
 
     def test_cycle_id_monotonic_and_overrun_no_burst(self) -> None:
         from scripts.daemon_run import load_runner_config
+
         from kinflow.daemon import DaemonRuntime, validate_daemon_config
 
         with tempfile.TemporaryDirectory() as td:
@@ -199,6 +200,7 @@ class DaemonRunnerV013Tests(unittest.TestCase):
 
     def test_overdue_reminder_processed_and_persisted(self) -> None:
         from scripts.daemon_run import DispatchCallbacks, build_oc_adapter_binding
+
         from kinflow.models import DeliveryTarget, Event, Reminder
         from kinflow.persistence.store import SqliteStateStore
 
@@ -256,6 +258,7 @@ class DaemonRunnerV013Tests(unittest.TestCase):
 
     def test_whatsapp_body_uses_event_context_and_preserves_delivery_semantics(self) -> None:
         from scripts.daemon_run import DispatchCallbacks, build_oc_adapter_binding
+
         from kinflow.models import DeliveryTarget, Event, Reminder
         from kinflow.oc_adapter import OpenClawSendResponseNormalized
         from kinflow.persistence.store import SqliteStateStore
@@ -329,6 +332,7 @@ class DaemonRunnerV013Tests(unittest.TestCase):
 
     def test_whatsapp_body_fallback_when_event_lookup_missing(self) -> None:
         from scripts.daemon_run import DispatchCallbacks, build_oc_adapter_binding
+
         from kinflow.models import DeliveryTarget, Event, Reminder
         from kinflow.oc_adapter import OpenClawSendResponseNormalized
         from kinflow.persistence.store import SqliteStateStore
@@ -391,6 +395,7 @@ class DaemonRunnerV013Tests(unittest.TestCase):
 
     def test_pf03_terminal_evidence_guard_blocks_invalid_adapter_result(self) -> None:
         from scripts.daemon_run import DispatchCallbacks, build_oc_adapter_binding
+
         from kinflow.models import DeliveryTarget, Event, Reminder
         from kinflow.oc_adapter import OpenClawSendResponseNormalized
         from kinflow.persistence.store import SqliteStateStore
@@ -454,6 +459,7 @@ class DaemonRunnerV013Tests(unittest.TestCase):
 
     def test_pf04_fail_token_consequence_on_bypass(self) -> None:
         from scripts.daemon_run import DispatchCallbacks, build_oc_adapter_binding
+
         from kinflow.models import DeliveryTarget, Event, Reminder
         from kinflow.persistence.store import SqliteStateStore
 
@@ -515,6 +521,7 @@ class DaemonRunnerV013Tests(unittest.TestCase):
 
     def test_token_origin_fail_closed_normalizes_to_adapter_execution(self) -> None:
         from scripts.daemon_run import DispatchCallbacks, build_oc_adapter_binding
+
         from kinflow.models import DeliveryTarget, Event, Reminder
         from kinflow.persistence.store import SqliteStateStore
 
@@ -565,6 +572,7 @@ class DaemonRunnerV013Tests(unittest.TestCase):
 
     def test_errata_t1_contradiction_guard_branch_b_has_valid_false(self) -> None:
         from scripts.daemon_run import DispatchCallbacks, build_oc_adapter_binding
+
         from kinflow.models import DeliveryTarget, Event, Reminder
         from kinflow.oc_adapter import OpenClawSendResponseNormalized
         from kinflow.persistence.store import SqliteStateStore
@@ -628,6 +636,7 @@ class DaemonRunnerV013Tests(unittest.TestCase):
 
     def test_errata_t2_provider_discard_ordering(self) -> None:
         from scripts.daemon_run import DispatchCallbacks, build_oc_adapter_binding
+
         from kinflow.models import DeliveryTarget, Event, Reminder
         from kinflow.oc_adapter import OpenClawSendResponseNormalized
         from kinflow.persistence.store import SqliteStateStore
@@ -699,6 +708,7 @@ class DaemonRunnerV013Tests(unittest.TestCase):
 
     def test_errata_t3_fail_fast_on_invariant_violation(self) -> None:
         from scripts.daemon_run import DispatchCallbacks, RunnerExit, SeamClassification, build_oc_adapter_binding
+
         from kinflow.models import DeliveryTarget, Event, Reminder
         from kinflow.persistence.store import SqliteStateStore
 
@@ -767,6 +777,7 @@ class DaemonRunnerV013Tests(unittest.TestCase):
 
     def test_errata_t4_evt0002_replay_no_contradiction(self) -> None:
         from scripts.daemon_run import DispatchCallbacks, build_oc_adapter_binding
+
         from kinflow.models import DeliveryTarget, Event, Reminder
         from kinflow.oc_adapter import OpenClawSendResponseNormalized
         from kinflow.persistence.store import SqliteStateStore
@@ -840,6 +851,7 @@ class DaemonRunnerV013Tests(unittest.TestCase):
 
     def test_v24_accept_mode_assignment_for_non_verifiable_accepted_like(self) -> None:
         from scripts.daemon_run import DispatchCallbacks, build_oc_adapter_binding
+
         from kinflow.models import DeliveryTarget, Event, Reminder
         from kinflow.oc_adapter import OpenClawSendResponseNormalized
         from kinflow.persistence.store import SqliteStateStore
@@ -917,6 +929,7 @@ class DaemonRunnerV013Tests(unittest.TestCase):
 
     def test_v12_evt0004_replay_routes_to_accept_mode_not_seam_b(self) -> None:
         from scripts.daemon_run import DispatchCallbacks, _normalize_gateway_send_response, build_oc_adapter_binding
+
         from kinflow.models import DeliveryTarget, Event, Reminder
         from kinflow.persistence.store import SqliteStateStore
 
@@ -975,6 +988,7 @@ class DaemonRunnerV013Tests(unittest.TestCase):
 
     def test_v24_reconcile_timeout_demotion_and_idempotency(self) -> None:
         from scripts.daemon_run import DispatchCallbacks, build_oc_adapter_binding
+
         from kinflow.models import DeliveryTarget, Event, Reminder
         from kinflow.oc_adapter import OpenClawSendResponseNormalized
         from kinflow.persistence.store import SqliteStateStore
@@ -1052,6 +1066,7 @@ class DaemonRunnerV013Tests(unittest.TestCase):
 
     def test_v12_t5_seam_tiebreak_none_for_schema_valid_weak_evidence(self) -> None:
         from scripts.daemon_run import DispatchCallbacks, build_oc_adapter_binding
+
         from kinflow.models import DeliveryTarget, Event, Reminder
         from kinflow.oc_adapter import OpenClawSendResponseNormalized, OutboundMessage
         from kinflow.persistence.store import SqliteStateStore
@@ -1133,6 +1148,7 @@ class DaemonRunnerV013Tests(unittest.TestCase):
 
     def test_v12_t7_contradiction_tripwire_on_tuple_lock_violation(self) -> None:
         from scripts.daemon_run import DispatchCallbacks, RunnerExit, SeamClassification, build_oc_adapter_binding
+
         from kinflow.models import DeliveryTarget, Event, Reminder
         from kinflow.persistence.store import SqliteStateStore
 
@@ -1201,6 +1217,7 @@ class DaemonRunnerV013Tests(unittest.TestCase):
 
     def test_adversarial_c_replay_routes_to_unmappable(self) -> None:
         from scripts.daemon_run import DispatchCallbacks, build_oc_adapter_binding
+
         from kinflow.models import DeliveryTarget, Event, Reminder
         from kinflow.oc_adapter import OpenClawSendResponseNormalized, OutboundMessage
         from kinflow.persistence.store import SqliteStateStore
@@ -1391,6 +1408,7 @@ class DaemonRunnerV013Tests(unittest.TestCase):
 
     def test_real_send_fn_default_mode_excludes_url_flag(self) -> None:
         from scripts.daemon_run import build_real_gateway_send_fn
+
         from kinflow.oc_adapter import OutboundMessage
 
         fake_stdout = json.dumps({"messageId": "wamid.HBgMNTU1"})
@@ -1427,6 +1445,7 @@ class DaemonRunnerV013Tests(unittest.TestCase):
 
     def test_real_send_fn_override_mode_with_token_includes_url_and_token(self) -> None:
         from scripts.daemon_run import build_real_gateway_send_fn
+
         from kinflow.oc_adapter import OutboundMessage
 
         fake_stdout = json.dumps({"messageId": "wamid.HBgMNTU1"})
@@ -1465,6 +1484,7 @@ class DaemonRunnerV013Tests(unittest.TestCase):
 
     def test_real_send_fn_override_mode_with_password_includes_url_and_password(self) -> None:
         from scripts.daemon_run import build_real_gateway_send_fn
+
         from kinflow.oc_adapter import OutboundMessage
 
         fake_stdout = json.dumps({"messageId": "wamid.HBgMNTU1"})
@@ -1502,6 +1522,7 @@ class DaemonRunnerV013Tests(unittest.TestCase):
 
     def test_real_send_fn_override_mode_without_credentials_raises_auth_unresolved(self) -> None:
         from scripts.daemon_run import BoundaryFailStopError, build_real_gateway_send_fn
+
         from kinflow.oc_adapter import OutboundMessage
 
         send_fn = build_real_gateway_send_fn(
@@ -1532,6 +1553,7 @@ class DaemonRunnerV013Tests(unittest.TestCase):
 
     def test_real_send_fn_success_mapping(self) -> None:
         from scripts.daemon_run import build_real_gateway_send_fn
+
         from kinflow.oc_adapter import OutboundMessage
 
         fake_stdout = json.dumps({"messageId": "wamid.HBgMNTU1"})
@@ -1567,6 +1589,7 @@ class DaemonRunnerV013Tests(unittest.TestCase):
 
     def test_real_send_fn_unmappable_response_fail_stop(self) -> None:
         from scripts.daemon_run import BoundaryFailStopError, build_real_gateway_send_fn
+
         from kinflow.oc_adapter import OutboundMessage
 
         completed = subprocess.CompletedProcess(args=["openclaw"], returncode=0, stdout="not-json", stderr="")

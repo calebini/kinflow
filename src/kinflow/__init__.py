@@ -9,7 +9,13 @@ from .engine import FamilySchedulerV0
 from .models import DeliveryTarget
 from .oc_adapter import OpenClawGatewayAdapter
 from .reason_codes import ReasonCode
-from .tickerd_runtime import KinflowModeReader, KinflowReconciler, KinflowWorkItemProcessor, KinflowWorkItemSource
+
+_TICKERD_EXPORTS = {
+    "KinflowModeReader",
+    "KinflowReconciler",
+    "KinflowWorkItemProcessor",
+    "KinflowWorkItemSource",
+}
 
 __all__ = [
     "FamilySchedulerV0",
@@ -26,3 +32,11 @@ __all__ = [
     "KinflowWorkItemProcessor",
     "KinflowWorkItemSource",
 ]
+
+
+def __getattr__(name: str) -> object:
+    if name in _TICKERD_EXPORTS:
+        from . import tickerd_runtime
+
+        return getattr(tickerd_runtime, name)
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
