@@ -8,12 +8,12 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from ctx002_v0.notification_renderer import (
+from kinflow.notification_renderer import (
     FALLBACK_REASON_CODE,
     RenderResult,
     render_reminder_text,
 )
-from ctx002_v0.persistence.db import bootstrap_database
+from kinflow.persistence.db import bootstrap_database
 
 
 class _BadText:

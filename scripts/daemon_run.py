@@ -20,8 +20,9 @@ SRC = ROOT / "src"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
-from ctx002_v0.daemon import DaemonRuntime, validate_daemon_config
-from ctx002_v0.models import (
+from kinflow.contract_versions import IMPLEMENTED_CONTRACT_BY_NAME
+from kinflow.daemon import DaemonRuntime, validate_daemon_config
+from kinflow.models import (
     ALLOWED_DESTINATION_CHANNELS,
     DESTINATION_RESOLUTION_STATUS_INVALID,
     DESTINATION_RESOLUTION_STATUS_MISSING,
@@ -34,14 +35,15 @@ from ctx002_v0.models import (
     AuditRecord,
     Reminder,
 )
-from ctx002_v0.oc_adapter import OpenClawGatewayAdapter, OpenClawSendResponseNormalized, OutboundMessage
-from ctx002_v0.persistence.reason_binding import ReasonCodeBinding
-from ctx002_v0.persistence.store import SqliteStateStore
-from ctx002_v0.reason_codes import ReasonCode
+from kinflow.oc_adapter import OpenClawGatewayAdapter, OpenClawSendResponseNormalized, OutboundMessage
+from kinflow.persistence.reason_binding import ReasonCodeBinding
+from kinflow.persistence.store import SqliteStateStore
+from kinflow.reason_codes import ReasonCode
+from kinflow.tickerd_runtime import cycle_metadata_from_row
 
-RUNTIME_CONTRACT_VERSION = "v0.1.4"
-DEPLOYMENT_CONTRACT_VERSION = "v0.1.4"
-SPEC_VERSION_BOUND = "v0.1.3"
+RUNTIME_CONTRACT_VERSION = IMPLEMENTED_CONTRACT_BY_NAME["daemon_runtime"].version
+DEPLOYMENT_CONTRACT_VERSION = IMPLEMENTED_CONTRACT_BY_NAME["daemon_deployment"].version
+SPEC_VERSION_BOUND = IMPLEMENTED_CONTRACT_BY_NAME["daemon_runner"].version
 
 FAIL_TOKENS = {
     "STARTUP_CONFIG_MISSING",
@@ -686,6 +688,9 @@ class DispatchCallbacks:
         self.accepted_unverified_demoted_total = 0
         self.accepted_unverified_open_gauge = 0
         self.accepted_unverified_open_gauge_consecutive = 0
+        self.current_cycle_id: str | None = None
+        self.current_trace_id: str | None = None
+        self.current_causation_id: str | None = None
 
     def list_candidates(self) -> list[dict[str, Any]]:
         due = self.store.list_due_reminders(datetime.now(UTC), limit=100)
@@ -919,6 +924,10 @@ class DispatchCallbacks:
         return False
 
     def process_candidate(self, row: dict[str, Any]) -> bool:
+        cycle_metadata = cycle_metadata_from_row(row)
+        self.current_cycle_id = cycle_metadata["cycle_id"]
+        self.current_trace_id = cycle_metadata["trace_id"]
+        self.current_causation_id = cycle_metadata["causation_id"]
         reminder: Reminder = row["reminder"]
         now = datetime.now(UTC)
         target = self.store.get_delivery_target(reminder.recipient_id)
@@ -1015,8 +1024,8 @@ class DispatchCallbacks:
                 delivery_id=f"dly-{reminder.reminder_id}-{reminder.attempts}",
                 attempt_id=f"att-{reminder.reminder_id}-{reminder.attempts}",
                 attempt_index=reminder.attempts,
-                trace_id="daemon_runner",
-                causation_id=reminder.reminder_id,
+                trace_id=self._delivery_trace_id(),
+                causation_id=self._delivery_causation_id(reminder.reminder_id),
                 channel_hint=resolved_channel,
                 target_ref=resolved_target_ref,
                 subject_type="event_reminder",
@@ -1024,7 +1033,7 @@ class DispatchCallbacks:
                 body_text=self._build_whatsapp_body_text(reminder, target),
                 dedupe_key=reminder.dedupe_key,
                 created_at_utc=now,
-                metadata_json={"daemon_cycle_id": row.get("cycle_id", "unknown")},
+                metadata_json={"daemon_cycle_id": self._delivery_cycle_id()},
                 metadata_schema_version=1,
             )
             adapter_result = None
@@ -1135,8 +1144,8 @@ class DispatchCallbacks:
             provider_accept_only=False,
             delivery_confidence="provider_confirmed",
             result_at_utc=now,
-            trace_id="daemon_runner",
-            causation_id=reminder.reminder_id,
+            trace_id=self._delivery_trace_id(),
+            causation_id=self._delivery_causation_id(reminder.reminder_id),
             source_adapter_attempt_id=None,
             **self._destination_kwargs(destination),
         )
@@ -1416,8 +1425,8 @@ class DispatchCallbacks:
             provider_accept_only=False,
             delivery_confidence="none",
             result_at_utc=now,
-            trace_id="daemon_runner",
-            causation_id=reminder.reminder_id,
+            trace_id=self._delivery_trace_id(),
+            causation_id=self._delivery_causation_id(reminder.reminder_id),
             source_adapter_attempt_id=attempt_id,
             **self._destination_kwargs(destination),
         )
@@ -1473,8 +1482,8 @@ class DispatchCallbacks:
             provider_accept_only=False,
             delivery_confidence="none",
             result_at_utc=now,
-            trace_id="daemon_runner",
-            causation_id=reminder.reminder_id,
+            trace_id=self._delivery_trace_id(),
+            causation_id=self._delivery_causation_id(reminder.reminder_id),
             source_adapter_attempt_id=None,
             **self._destination_kwargs(destination),
         )
@@ -1795,6 +1804,8 @@ class DispatchCallbacks:
 
     def _append_delivery_audit(self, reminder_id: str, reason_code: ReasonCode, payload: str) -> None:
         index = len(self.store.list_audit()) + 1
+        if self.current_cycle_id:
+            payload = f"{payload};daemon_cycle_id={self.current_cycle_id}"
         self.store.append_audit(
             AuditRecord(
                 index=index,
@@ -1805,6 +1816,15 @@ class DispatchCallbacks:
                 payload=payload,
             )
         )
+
+    def _delivery_cycle_id(self) -> str:
+        return self.current_cycle_id or "unknown"
+
+    def _delivery_trace_id(self) -> str:
+        return self.current_trace_id or "daemon_runner"
+
+    def _delivery_causation_id(self, fallback: str) -> str:
+        return self.current_causation_id or fallback
 
 
 def ensure_dispatch_path_wired(callbacks: DispatchCallbacks | None) -> None:

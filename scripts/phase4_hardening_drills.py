@@ -10,12 +10,12 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from uuid import uuid4
 
-from ctx002_v0.daemon import DaemonRuntime, validate_daemon_config
-from ctx002_v0.engine import FamilySchedulerV0
-from ctx002_v0.models import DeliveryTarget
-from ctx002_v0.oc_adapter import OpenClawGatewayAdapter, OpenClawSendResponseNormalized, OutboundMessage
-from ctx002_v0.persistence.store import SqliteStateStore
-from ctx002_v0.reason_codes import ReasonCode
+from kinflow.daemon import DaemonRuntime, validate_daemon_config
+from kinflow.engine import FamilySchedulerV0
+from kinflow.models import DeliveryTarget
+from kinflow.oc_adapter import OpenClawGatewayAdapter, OpenClawSendResponseNormalized, OutboundMessage
+from kinflow.persistence.store import SqliteStateStore
+from kinflow.reason_codes import ReasonCode
 
 
 @dataclass

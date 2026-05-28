@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from datetime import UTC, datetime
 
-from ctx002_v0 import DeliveryTarget, FamilySchedulerV0
+from kinflow import DeliveryTarget, FamilySchedulerV0
 
 
 def _serialize(value: object) -> str:

@@ -2,7 +2,7 @@ title: KINFLOW Per-Event Destination Contract Master
 version: v0.1.9
 status: MASTER_CANDIDATE
 date_utc: 2026-04-23
-initiative: CTX-002
+initiative: KINFLOW
 supersedes: KINFLOW_PER_EVENT_DESTINATION_CONTRACT_MASTER_v0.1.8
 scope_source: KINFLOW_PER_EVENT_DESTINATION_SCOPE_MASTER_v1.1
 rubric_source: /home/agent/ontology-core/governance/convergence-rubric/CONVERGENCE_RUBRIC_MASTER_v6.md
@@ -13,7 +13,7 @@ Review Phase: mid
 Convergence Target: final
 Tier 5 Entry Mode: strict
 Status Flag (non-rubric): MASTER_CANDIDATE
-Lane Scope: CTX-002 per-event destination resolution and dispatch snapshot semantics.
+Lane Scope: KINFLOW per-event destination resolution and dispatch snapshot semantics.
 
 Compatibility Anchors:
 /home/agent/projects/apps/kinflow/specs/KINFLOW_PER_EVENT_DESTINATION_SCOPE_MASTER_v1.1.md

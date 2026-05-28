@@ -10,14 +10,14 @@ run_code: 4359
 
 | Hash ID | Artifact | Version | Absolute Path | sha256 |
 |---|---|---|---|---|
-| `FRZ-REQ-V0` | Requirements master | v0 | `/home/agent/projects/apps/kinflow/requirements/KINFLOW_MASTER_REQUIREMENTS_UNIFIED_V0.md` | `e2567d2d15269716808a72908133e289664f4c7ba4606f1add61e30b18de9933` |
-| `FRZ-ARCH-V0` | Architecture master | v0 | `/home/agent/projects/apps/kinflow/architecture/KINFLOW_V0_ARCHITECTURE_BRIEF_MASTER.md` | `d4a5835efe0f50a1b8c5b26a8934f0331377f95d19bf6ebc4319025214ad34ae` |
+| `FRZ-REQ-V0` | Requirements master | v0 | `/home/agent/projects/apps/kinflow/requirements/KINFLOW_MASTER_REQUIREMENTS_UNIFIED_V0.md` | `ee73b7f5dba7cf78ef1363695dd847019f3b646b6ff608ae30eed9a5f72f82a5` |
+| `FRZ-ARCH-V0` | Architecture master | v0 | `/home/agent/projects/apps/kinflow/architecture/KINFLOW_V0_ARCHITECTURE_BRIEF_MASTER.md` | `ccd9a16e0d71ed1a15e49c4a5d759b65a3615b262edda7b4beb05515fedea937` |
 | `FRZ-PERSIST-V028` | Persistence spec master | v0.2.8 | `/home/agent/projects/apps/kinflow/specs/KINFLOW_DURABLE_PERSISTENCE_SPEC_MASTER_v0.2.6.md` | `469542273fe49203f6df85f38cf2153e6bcabf8d48ff5e87758858ebe75df6ec` |
 | `FRZ-COMMS-V018` | Comms adapter contract master | v0.1.8 | `/home/agent/projects/apps/kinflow/specs/KINFLOW_COMMS_ADAPTER_CONTRACT_MASTER_v0.1.7.md` | `82833506d7d65e2528c027e95b9ed650f50b593d2e7ecbba94b8425be827f01f` |
 | `FRZ-DAEMON-V014` | Daemon runtime contract master | v0.1.4 | `/home/agent/projects/apps/kinflow/specs/KINFLOW_DAEMON_RUNTIME_CONTRACT_MASTER_v0.1.4.md` | `50111cf0173b2023ad92a0c7b08ceae0e85163d3fc117234dc8d400ac8beaded` |
 | `FRZ-OCADAPTER-V025` | OC adapter implementation spec master | v0.2.5 | `/home/agent/projects/apps/kinflow/specs/KINFLOW_OC_ADAPTER_IMPLEMENTATION_SPEC_MASTER_v0.2.4.md` | `23b99efcb3bfc8b547a2a8e2a67e58fa226c7f02ce689da64d365f5b7adabd4d` |
-| `FRZ-REASON-V103` | Reason-code canonical registry | v1.0.3 | `/home/agent/projects/apps/kinflow/specs/KINFLOW_REASON_CODES_CANONICAL.md` | `7aa08628acf0633480c5f496fc632f24226cdfabad8aa8b9c34ab68e37d04742` |
-| `FRZ-CHECKLIST-MASTER` | Production plan checklist master | master-unversioned | `/home/agent/projects/apps/kinflow/specs/KINFLOW_PRODUCTION_PLAN_CHECKLIST_MASTER.md` | `cfdff1107bebdef63ccd6ea07d97ad68f59a85117a1bfff811f4aa1c39e396f9` |
+| `FRZ-REASON-V106` | Reason-code canonical registry | v1.0.6 | `/home/agent/projects/apps/kinflow/specs/KINFLOW_REASON_CODES_CANONICAL.md` | `f6472addbf19a97c589b8b49a6334fbbb5e0678b670ca47e65d923f963bc02e6` |
+| `FRZ-CHECKLIST-MASTER` | Production plan checklist master | master-unversioned | `/home/agent/projects/apps/kinflow/specs/KINFLOW_PRODUCTION_PLAN_CHECKLIST_MASTER.md` | `42d4721d2e534b9d45ae236dd2e2a2ba480a9daa223df3eb0045db959cd15523` |
 
 
 ## 1.1) Authority model and checklist binding semantics
@@ -75,10 +75,7 @@ Exception record MUST include:
 ## 4) Architecture decision discoverability pins
 
 Issue #3 architecture decision (authoritative):
-- `/home/agent/projects/apps/kinflow/docs/KINFLOW_ARCH_DECISION_ISSUE3_ADAPTER_RESULTS_VS_DELIVERY_ATTEMPTS_2026-03-24.md`
-
-Post-Issue #3 spec re-baseline declaration:
-- `/home/agent/projects/apps/kinflow/docs/KINFLOW_SPEC_BASELINE_DECLARATION_POST_ISSUE3_2026-03-24.md`
+- `/home/agent/projects/apps/kinflow/docs/decisions/adapter-results-vs-delivery-attempts.md`
 
 ## 5) Freeze violation handling
 

@@ -8,7 +8,7 @@ from dataclasses import asdict
 from datetime import UTC, datetime
 from pathlib import Path
 
-from ctx002_v0.oc_adapter import OutboundMessage
+from kinflow.oc_adapter import OutboundMessage
 from daemon_run import build_oc_adapter_binding
 
 

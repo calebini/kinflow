@@ -4,8 +4,8 @@ import tempfile
 import unittest
 from datetime import UTC, datetime
 
-from ctx002_v0 import DeliveryTarget, FamilySchedulerV0, ReasonCode
-from ctx002_v0.persistence.store import SqliteStateStore
+from kinflow import DeliveryTarget, FamilySchedulerV0, ReasonCode
+from kinflow.persistence.store import SqliteStateStore
 
 
 def _create_intent(message_id: str) -> dict:

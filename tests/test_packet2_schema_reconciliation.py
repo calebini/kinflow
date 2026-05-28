@@ -4,7 +4,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from ctx002_v0.persistence.db import apply_migrations, connect_sqlite, discover_migrations, enforce_foreign_keys
+from kinflow.persistence.db import apply_migrations, connect_sqlite, discover_migrations, enforce_foreign_keys
 
 
 class Packet2SchemaReconciliationTests(unittest.TestCase):

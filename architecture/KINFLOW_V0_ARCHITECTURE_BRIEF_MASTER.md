@@ -1,9 +1,9 @@
 source_message_id: 1483850977546207435
 source_channel_id: 1483760080766898297
-installed_by_instruction_id: CTX-002-INSTALL-ARCH-20260318-001
+installed_by_instruction_id: KINFLOW-INSTALL-ARCH-20260318-001
 installed_utc: 2026-03-18T16:54:46Z
 
-CTX-002 v0 Architecture Brief (Master Copy — Unified, Refined)
+KINFLOW v0 Architecture Brief (Master Copy — Unified, Refined)
 
 5) Create vs Update Resolution Model (Updated)
 

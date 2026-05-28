@@ -9,7 +9,7 @@ import tempfile
 from datetime import UTC, datetime
 from pathlib import Path
 
-from ctx002_v0.persistence.db import (
+from kinflow.persistence.db import (
     apply_migrations,
     connect_sqlite,
     discover_migrations,

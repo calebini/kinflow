@@ -4,7 +4,7 @@ import tempfile
 import unittest
 from datetime import UTC, datetime
 
-from ctx002_v0 import DeliveryTarget, FamilySchedulerV0
+from kinflow import DeliveryTarget, FamilySchedulerV0
 
 
 def _intent(

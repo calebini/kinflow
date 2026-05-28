@@ -13,11 +13,12 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from scripts.daemon_run import DestinationResolution, DispatchCallbacks, RunnerConfig, build_oc_adapter_binding
-from src.ctx002_v0.engine import FamilySchedulerV0
-from src.ctx002_v0.models import Event, Reminder
-from src.ctx002_v0.oc_adapter import OpenClawSendResponseNormalized
-from src.ctx002_v0.persistence.store import SqliteStateStore
-from src.ctx002_v0.reason_codes import ReasonCode
+
+from kinflow.engine import FamilySchedulerV0
+from kinflow.models import Event, Reminder
+from kinflow.oc_adapter import OpenClawSendResponseNormalized
+from kinflow.persistence.store import SqliteStateStore
+from kinflow.reason_codes import ReasonCode
 
 
 def _runner_cfg(root: Path) -> RunnerConfig:
@@ -87,7 +88,7 @@ class PerEventDestinationV019Tests(unittest.TestCase):
         )
 
     def test_precedence_event_override_wins(self) -> None:
-        from src.ctx002_v0.models import DeliveryTarget
+        from kinflow.models import DeliveryTarget
 
         captured: dict[str, str] = {}
         with tempfile.TemporaryDirectory() as td:
@@ -138,7 +139,7 @@ class PerEventDestinationV019Tests(unittest.TestCase):
             self.assertEqual(row["resolved_target_ref"], "15551234567")
 
     def test_precedence_request_context_default_used_when_override_absent(self) -> None:
-        from src.ctx002_v0.models import DeliveryTarget
+        from kinflow.models import DeliveryTarget
 
         captured: dict[str, str] = {}
         with tempfile.TemporaryDirectory() as td:
@@ -189,7 +190,7 @@ class PerEventDestinationV019Tests(unittest.TestCase):
             self.assertEqual(row["resolved_target_ref"], "15550001111")
 
     def test_precedence_recipient_default_used_when_first_two_absent(self) -> None:
-        from src.ctx002_v0.models import DeliveryTarget
+        from kinflow.models import DeliveryTarget
 
         captured: dict[str, str] = {}
         with tempfile.TemporaryDirectory() as td:
@@ -242,7 +243,7 @@ class PerEventDestinationV019Tests(unittest.TestCase):
             self.assertEqual(row["attempted_target_ref"], "15550003333")
 
     def test_write_path_persists_and_clears_destination_fields_deterministically(self) -> None:
-        from src.ctx002_v0.models import DeliveryTarget
+        from kinflow.models import DeliveryTarget
 
         with tempfile.TemporaryDirectory() as td:
             db = Path(td) / "runtime.sqlite"
@@ -327,7 +328,7 @@ class PerEventDestinationV019Tests(unittest.TestCase):
             self.assertIsNone(reminder_row["request_context_default_target_ref"])
 
     def test_nested_destination_payload_normalizes_to_engine_fields(self) -> None:
-        from src.ctx002_v0.models import DeliveryTarget
+        from kinflow.models import DeliveryTarget
 
         with tempfile.TemporaryDirectory() as td:
             db = Path(td) / "runtime.sqlite"
@@ -394,7 +395,7 @@ class PerEventDestinationV019Tests(unittest.TestCase):
             self.assertIsNone(rows[1]["request_context_default_target_ref"])
 
     def test_mixed_shape_payload_prefers_flattened_fields_when_both_present(self) -> None:
-        from src.ctx002_v0.models import DeliveryTarget
+        from kinflow.models import DeliveryTarget
 
         with tempfile.TemporaryDirectory() as td:
             db = Path(td) / "runtime.sqlite"
@@ -439,7 +440,7 @@ class PerEventDestinationV019Tests(unittest.TestCase):
             self.assertEqual(row["request_context_default_target_ref"], "tg-flat-caleb")
 
     def test_controlled_case_normal_audience_event_override_provenance(self) -> None:
-        from src.ctx002_v0.models import DeliveryTarget
+        from kinflow.models import DeliveryTarget
 
         captured: dict[str, str] = {}
         with tempfile.TemporaryDirectory() as td:
@@ -533,7 +534,7 @@ class PerEventDestinationV019Tests(unittest.TestCase):
             self.assertEqual(attempt_row["reason_code"], ReasonCode.DELIVERED_SUCCESS.value)
 
     def test_success_fails_closed_when_resolved_provenance_tuple_incomplete(self) -> None:
-        from src.ctx002_v0.models import DeliveryTarget
+        from kinflow.models import DeliveryTarget
 
         calls = {"n": 0}
         with tempfile.TemporaryDirectory() as td:
@@ -599,7 +600,7 @@ class PerEventDestinationV019Tests(unittest.TestCase):
             self.assertEqual(delivered, 0)
 
     def test_missing_destination_fails_closed_with_none_missing(self) -> None:
-        from src.ctx002_v0.models import DeliveryTarget
+        from kinflow.models import DeliveryTarget
 
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
@@ -639,7 +640,7 @@ class PerEventDestinationV019Tests(unittest.TestCase):
             self.assertEqual(delivered, 0)
 
     def test_invalid_override_blocks_without_fallback(self) -> None:
-        from src.ctx002_v0.models import DeliveryTarget
+        from kinflow.models import DeliveryTarget
 
         calls = {"n": 0}
         with tempfile.TemporaryDirectory() as td:
@@ -687,7 +688,7 @@ class PerEventDestinationV019Tests(unittest.TestCase):
             self.assertEqual(row["destination_resolution_status"], "invalid")
 
     def test_unknown_failure_exhaustion_maps_to_failed_retry_exhausted(self) -> None:
-        from src.ctx002_v0.models import DeliveryTarget
+        from kinflow.models import DeliveryTarget
 
         engine = FamilySchedulerV0(
             household_timezone="UTC",
